@@ -2,11 +2,19 @@ use bytemuck::bytes_of;
 use wgpu::{util::DeviceExt, wgc::device};
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GpuCamData {
-    pub x: f32,
-    pub y: f32,
-    pub direction: f32,
+    pub pos : [f32; 3],
+    pub roll : f32,
+    pub yaw: f32,
+    pub pitch : f32,
+    h_fov : f32,
+    v_fov : f32,
+}
+impl Default for GpuCamData{
+    fn default() -> Self {
+        Self { pos : [0.,0.,0.], roll: 0., yaw: 0., pitch: 0., h_fov: 80., v_fov: 60. }
+    }
 }
 impl GpuCamData {
     pub fn get_layout(&self, device: &wgpu::Device) -> wgpu::BindGroupLayout {

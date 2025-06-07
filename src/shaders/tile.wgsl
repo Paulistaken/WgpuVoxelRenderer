@@ -23,3 +23,38 @@ fn is_node_filled(tar_pos : vec2<u32>) -> u32{
     }
     return 0;
 }
+fn render_map(id : vec3<u32>){
+    let pid = screen_data.width * id.y + id.x;
+    let rval = is_node_filled(vec2(id.x,id.y));
+
+    var clr_r = 0.0;
+    var clr_g = 0.0;
+    var clr_b = 0.0;
+
+    if rval.fill == 0{
+        if rval.val == 1{
+            clr_r = 1.0;
+            clr_g = 1.0;
+            clr_b = 1.0;
+        }else{
+            clr_r = 0.5;
+            clr_g = 0.5;
+            clr_b = 0.5;
+        }
+    }
+    if rval.fill == 1{
+        let d = rval.b2.x - rval.b1.x;
+        clr_r = 0.1 * f32(d);
+        clr_g = 0.0;
+        clr_b = 0.0;
+    }
+    pixel_data[pid].val_r = clr_r;
+    pixel_data[pid].val_g = clr_g;
+    pixel_data[pid].val_b = clr_b;
+    if u32(cam_data.x) == id.x && u32(cam_data.y) == id.y{
+        pixel_data[pid].val_r = 0.5;
+        pixel_data[pid].val_g = 0.0;
+        pixel_data[pid].val_b = 0.5;
+    }
+}
+
