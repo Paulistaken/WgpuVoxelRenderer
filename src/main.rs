@@ -38,6 +38,9 @@ struct App<'a> {
 
 impl State<'_> {
     async fn new(window: Arc<Window>) -> Self {
+        let size = (window.inner_size().width, window.inner_size().height);
+        let vir_size = (100, (100. * (size.1 as f32 / size.0 as f32)) as u32);
+
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
         let surface = instance.create_surface(Arc::clone(&window)).unwrap();
         let adapter = instance
@@ -55,9 +58,9 @@ impl State<'_> {
             })
             .await
             .unwrap();
-        let mut cam_data = cam::GpuCamData::default();
+        let mut cam_data = cam::GpuCamData::new(size);
         cam_data.pos[0] = 1.;
-        let mut screen_data = screen::ScreenData::new(192, 108);
+        let mut screen_data = screen::ScreenData::new(vir_size.0, vir_size.1);
         screen_data.set_buffers(&device);
         let mut map_data = map::MapData::new(16);
 
@@ -70,40 +73,41 @@ impl State<'_> {
         for i in 0..dd{
             let s = dd as f32 / i as f32;
             for j in 0..(dd/8){
-                let _ = map_data.insert_value((j * 8, 0, i), 0, [s, 1. / s, s]);
+                let _ = map_data.insert_value((j as f32 * 8., 0., i as f32), 0, [s, 1. / s, s]);
             }
         }
 
         for i in 0..8{
-            let px = 2 * 2_u32.pow(4);
-            let pz = 2_u32.pow(4);  
-            let _ = map_data.insert_value((px, 0, 2 * i * pz), 4, [1., 0., 1.]);
-            let _ = map_data.insert_value((px, 0, 2 * i * pz + pz), 4, [1., 0.1, 0.5]);
+            let px = 2_f32.powi(5);
+            let pz = 2_f32.powi(4);  
+            let _ = map_data.insert_value((px, 0., 2. * i as f32 * pz), 4, [1., 0., 1.]);
+            let _ = map_data.insert_value((px, 0., 2. * i as f32 * pz + pz), 4, [1., 0.1, 0.5]);
 
-            let _ = map_data.insert_value((px - 2_u32.pow(3), 0, 2 * i * pz), 3, [0.6, 0.5, 0.3]);
-            let _ = map_data.insert_value((px - 2_u32.pow(3), 0, 2 * i * pz + pz), 3, [1., 0.5, 0.5]);
+            let _ = map_data.insert_value((px - 2_f32.powi(3), 0., 2. * i as f32 * pz), 3, [0.6, 0.5, 0.3]);
+            let _ = map_data.insert_value((px - 2_f32.powi(3), 0., 2. * i as f32 * pz + pz), 3, [1., 0.5, 0.5]);
 
-            let _ = map_data.insert_value((px - 2_u32.pow(3), 0, 2 * i * pz + 2_u32.pow(3)), 3, [1.0, 1.0, 0.0]);
-            let _ = map_data.insert_value((px - 2_u32.pow(3), 0, 2 * i * pz + pz + 2_u32.pow(3)), 3, [1.0, 1.0, 0.2]);
-
+            let _ = map_data.insert_value((px - 2_f32.powi(3), 0., 2. * i as f32 * pz + 2_f32.powi(3)), 3, [0.6, 0.5, 0.3]);
+            let _ = map_data.insert_value((px - 2_f32.powi(3), 0., 2. * i as f32 * pz + pz + 2_f32.powi(3)), 3, [1., 0.5, 0.5]);
 
         }
 
         for i in 0..8{
-            let px = 2 * 2_u32.pow(4);
-            let py = 2_u32.pow(4);
-            let pz = 2 * i * 2_u32.pow(4);  
+            let px = 2_f32.powi(5);
+            let py = 2_f32.powi(4);
+            let pz = i as f32 * 2_f32.powi(5);  
             let _ = map_data.insert_value((px, py, pz), 4, [1., 1., 1.]);
-            let _ = map_data.insert_value((px, py + 2_u32.pow(4), pz), 3, [1., 0., 0.]);
-            let _ = map_data.insert_value((px + 2_u32.pow(2), py + 2_u32.pow(4), pz + 2_u32.pow(3)), 2, [0., 1., 0.]);
-            let _ = map_data.insert_value((px, py + 2_u32.pow(4), pz + 2_u32.pow(3)), 1, [0., 0., 1.]);
+            let _ = map_data.insert_value((px, py + 2_f32.powi(4), pz), 3, [1., 0., 0.]);
+
+            let _ = map_data.insert_value((px + 2_f32.powi(2), py + 2_f32.powi(4), pz + 2_f32.powi(3)), 2, [0., 1., 0.]);
+            let _ = map_data.insert_value((px, py + 2_f32.powi(4), pz + 2_f32.powi(3)), 1, [0., 0., 1.]);
         }
 
-
-
-
-
-
+        let _ = map_data.insert_value((1., 5., 1.), 1, [1., 0., 0.]);
+        let _ = map_data.insert_value((1., 5., 2.), 0, [0., 1., 0.]);
+        let _ = map_data.insert_value((1., 5., 3.), -1, [0., 0., 1.]);
+        let _ = map_data.insert_value((1., 5., 4.), -2, [1., 0., 0.]);
+        let _ = map_data.insert_value((1., 5., 5.), -3, [1., 0., 0.]);
+        let _ = map_data.insert_value((1., 5., 6.), -4, [1., 0., 0.]);
 
         map_data.serialize();
         map_data.make_buffers(&device);
@@ -115,8 +119,7 @@ impl State<'_> {
             .find(|f| f.is_srgb())
             .copied()
             .unwrap_or(surface_caps.formats[0]);
-        let size = (192, 108);
-        let size = (window.inner_size().width, window.inner_size().height);
+
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,

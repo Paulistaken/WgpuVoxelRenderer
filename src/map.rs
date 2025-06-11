@@ -9,9 +9,9 @@ pub struct GpuTileData {
     vg : f32,
     vb : f32,
     pub children: [u32; 8],
-    pub x: u32,
-    pub y: u32,
-    pub z: u32,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
     pub d: i32,
 }
 
@@ -22,9 +22,9 @@ pub struct CpuTileData {
     pub vg : f32,
     pub vb : f32,
     pub children: [Option<Box<CpuTileData>>; 8],
-    pub x: u32,
-    pub y: u32,
-    pub z: u32,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
     pub d: i32,
 }
 
@@ -90,9 +90,9 @@ impl MapData {
                 vg : 0.,
                 vb : 0.,
                 children: [const { Option::None }; 8],
-                x: 0,
-                y: 0,
-                z: 0,
+                x: 0.,
+                y: 0.,
+                z: 0.,
                 d,
             }),
             ..Default::default()
@@ -163,14 +163,14 @@ impl MapData {
     }
 }
 impl MapData {
-    pub fn retrieve_value(&mut self, tar_pos: (u32, u32, u32)) -> Result<Box<CpuTileData>, ()> {
+    pub fn retrieve_value(&mut self, tar_pos: (f32, f32, f32)) -> Result<Box<CpuTileData>, ()> {
         let mut cur_tile = &mut self.cpu_data;
         loop {
             if cur_tile.filled {
                 return Ok(cur_tile.clone());
             }
 
-            let w = 2_u32.pow(cur_tile.d as u32) / 2;
+            let w = 2_f32.powi(cur_tile.d) / 2.;
 
             let id_x = if tar_pos.0 < cur_tile.x + w { 0 } else { 1 };
             let id_y = if tar_pos.1 < cur_tile.y + w { 0 } else { 1 };
@@ -187,7 +187,7 @@ impl MapData {
         Err(())
     }
 
-    pub fn insert_value(&mut self, tar_pos: (u32, u32, u32), deph: i32, color : [f32; 3]) -> Result<(), ()> {
+    pub fn insert_value(&mut self, tar_pos: (f32, f32, f32), deph: i32, color : [f32; 3]) -> Result<(), ()> {
         let mut cur_tile = &mut self.cpu_data;
         loop {
             if cur_tile.d == deph {
@@ -198,8 +198,8 @@ impl MapData {
                 return Ok(());
             }
 
-            let w = 2_u32.pow(cur_tile.d as u32);
-            let nw = w / 2;
+            let w = 2_f32.powi(cur_tile.d);
+            let nw = w / 2.;
 
             let id_x = if tar_pos.0 < cur_tile.x + nw { 0 } else { 1 };
             let id_y = if tar_pos.1 < cur_tile.y + nw { 0 } else { 1 };
@@ -215,9 +215,9 @@ impl MapData {
                     vr : 0.,
                     vg : 0.,
                     vb : 0.,
-                    x: cur_tile.x + nw * id_x,
-                    y: cur_tile.y + nw * id_y,
-                    z: cur_tile.z + nw * id_z,
+                    x: cur_tile.x + nw * id_x as f32,
+                    y: cur_tile.y + nw * id_y as f32,
+                    z: cur_tile.z + nw * id_z as f32,
                     d: cur_tile.d - 1,
                     children: [const { Option::None }; 8],
                 }));
