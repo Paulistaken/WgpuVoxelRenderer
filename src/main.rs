@@ -59,14 +59,51 @@ impl State<'_> {
         cam_data.pos[0] = 1.;
         let mut screen_data = screen::ScreenData::new(192, 108);
         screen_data.set_buffers(&device);
-        let mut map_data = map::MapData::new(128);
+        let mut map_data = map::MapData::new(16);
 
-        let _ = map_data.insert_value(1, (0, 1, 5));
-        let _ = map_data.insert_value(1, (1, 2, 7));
-        let _ = map_data.insert_value(1, (2, 3, 5));
-        let _ = map_data.insert_value(1, (4, 1, 9));
-        let _ = map_data.insert_value(1, (7, 2, 4));
-        let _ = map_data.insert_value(1, (16, 3, 16));
+        cam_data.pos[0] = 0. * 2_u32.pow(4) as f32; 
+        cam_data.pos[1] = 2. * 2_u32.pow(4) as f32; 
+        cam_data.pos[2] = 8. * 2_u32.pow(4) as f32; 
+        
+        let dd = 2_u32.pow(8);
+        
+        for i in 0..dd{
+            let s = dd as f32 / i as f32;
+            for j in 0..(dd/8){
+                let _ = map_data.insert_value((j * 8, 0, i), 0, [s, 1. / s, s]);
+            }
+        }
+
+        for i in 0..8{
+            let px = 2 * 2_u32.pow(4);
+            let pz = 2_u32.pow(4);  
+            let _ = map_data.insert_value((px, 0, 2 * i * pz), 4, [1., 0., 1.]);
+            let _ = map_data.insert_value((px, 0, 2 * i * pz + pz), 4, [1., 0.1, 0.5]);
+
+            let _ = map_data.insert_value((px - 2_u32.pow(3), 0, 2 * i * pz), 3, [0.6, 0.5, 0.3]);
+            let _ = map_data.insert_value((px - 2_u32.pow(3), 0, 2 * i * pz + pz), 3, [1., 0.5, 0.5]);
+
+            let _ = map_data.insert_value((px - 2_u32.pow(3), 0, 2 * i * pz + 2_u32.pow(3)), 3, [1.0, 1.0, 0.0]);
+            let _ = map_data.insert_value((px - 2_u32.pow(3), 0, 2 * i * pz + pz + 2_u32.pow(3)), 3, [1.0, 1.0, 0.2]);
+
+
+        }
+
+        for i in 0..8{
+            let px = 2 * 2_u32.pow(4);
+            let py = 2_u32.pow(4);
+            let pz = 2 * i * 2_u32.pow(4);  
+            let _ = map_data.insert_value((px, py, pz), 4, [1., 1., 1.]);
+            let _ = map_data.insert_value((px, py + 2_u32.pow(4), pz), 3, [1., 0., 0.]);
+            let _ = map_data.insert_value((px + 2_u32.pow(2), py + 2_u32.pow(4), pz + 2_u32.pow(3)), 2, [0., 1., 0.]);
+            let _ = map_data.insert_value((px, py + 2_u32.pow(4), pz + 2_u32.pow(3)), 1, [0., 0., 1.]);
+        }
+
+
+
+
+
+
 
         map_data.serialize();
         map_data.make_buffers(&device);
@@ -78,11 +115,13 @@ impl State<'_> {
             .find(|f| f.is_srgb())
             .copied()
             .unwrap_or(surface_caps.formats[0]);
+        let size = (192, 108);
+        let size = (window.inner_size().width, window.inner_size().height);
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
-            width: 400,
-            height: 200,
+            width: size.0,
+            height: size.1,
             present_mode: surface_caps.present_modes[0],
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
@@ -194,7 +233,7 @@ impl State<'_> {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
                             r: 0.1,
                             g: 0.2,
-                            b: 0.3,
+                            b: 0.8,
                             a: 1.0,
                         }),
                         store: wgpu::StoreOp::Store,
@@ -248,30 +287,30 @@ impl ApplicationHandler for App<'_> {
 
                 if let Some(state) = self.state.as_mut() {
                     if self.input.is_key_pressed(KeyCode::ShiftLeft) {
-                        state.cam_data.pos[1] -= 0.1;
+                        state.cam_data.pos[1] -= 1.0;
                     }
                     if self.input.is_key_pressed(KeyCode::Space) {
-                        state.cam_data.pos[1] += 0.1;
+                        state.cam_data.pos[1] += 1.0;
                     }
                     if self.input.is_key_pressed(KeyCode::KeyW) {
                         let dir = f32::to_radians(state.cam_data.yaw + 0.);
-                        state.cam_data.pos[2] += f32::sin(dir) / 10.;
-                        state.cam_data.pos[0] += f32::cos(dir) / 10.;
+                        state.cam_data.pos[2] += f32::sin(dir);
+                        state.cam_data.pos[0] += f32::cos(dir);
                     }
                     if self.input.is_key_pressed(KeyCode::KeyS) {
                         let dir = f32::to_radians(state.cam_data.yaw + 180.);
-                        state.cam_data.pos[2] += f32::sin(dir) / 10.;
-                        state.cam_data.pos[0] += f32::cos(dir) / 10.;
+                        state.cam_data.pos[2] += f32::sin(dir);
+                        state.cam_data.pos[0] += f32::cos(dir);
                     }
                     if self.input.is_key_pressed(KeyCode::KeyA) {
                         let dir = f32::to_radians(state.cam_data.yaw - 90.);
-                        state.cam_data.pos[2] += f32::sin(dir) / 10.;
-                        state.cam_data.pos[0] += f32::cos(dir) / 10.;
+                        state.cam_data.pos[2] += f32::sin(dir);
+                        state.cam_data.pos[0] += f32::cos(dir);
                     }
                     if self.input.is_key_pressed(KeyCode::KeyD) {
                         let dir = f32::to_radians(state.cam_data.yaw + 90.);
-                        state.cam_data.pos[2] += f32::sin(dir) / 10.;
-                        state.cam_data.pos[0] += f32::cos(dir) / 10.;
+                        state.cam_data.pos[2] += f32::sin(dir);
+                        state.cam_data.pos[0] += f32::cos(dir);
                     }
 
                     if self.input.is_key_pressed(KeyCode::KeyH) {

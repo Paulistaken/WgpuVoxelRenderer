@@ -5,21 +5,27 @@ use wgpu::util::DeviceExt;
 #[derive(Default, Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GpuTileData {
     pub filled: u32,
+    vr : f32,
+    vg : f32,
+    vb : f32,
     pub children: [u32; 8],
     pub x: u32,
     pub y: u32,
-    pub z : u32,
-    pub w: u32,
+    pub z: u32,
+    pub d: i32,
 }
 
 #[derive(Default, Debug, Clone)]
 pub struct CpuTileData {
-    pub filled: u32,
+    pub filled: bool,
+    pub vr : f32,
+    pub vg : f32,
+    pub vb : f32,
     pub children: [Option<Box<CpuTileData>>; 8],
     pub x: u32,
     pub y: u32,
     pub z: u32,
-    pub w: u32,
+    pub d: i32,
 }
 
 #[repr(C)]
@@ -27,7 +33,7 @@ pub struct CpuTileData {
 pub struct GpuMapData {
     pub width: u32,
     pub heigth: u32,
-    pub deph : u32,
+    pub deph: u32,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -56,32 +62,38 @@ impl CpuTileData {
             }
         }
         gpu_data[index as usize] = GpuTileData {
-            filled: self.filled,
+            filled: if self.filled { 1 } else { 0 },
+            vr : self.vr,
+            vg : self.vg,
+            vb : self.vb,
             children: indexes,
             x: self.x,
             y: self.y,
             z: self.z,
-            w: self.w,
+            d: self.d,
         };
         index
     }
 }
 impl MapData {
-    pub fn new(w: u32) -> Self {
+    pub fn new(d: i32) -> Self {
         Self {
             map_data: GpuMapData {
-                width: w,
-                heigth: w,
-                deph : w,
+                width: 2_u32.pow(d as u32),
+                heigth: 2_u32.pow(d as u32),
+                deph: 2_u32.pow(d as u32),
             },
             gpu_data: Vec::new(),
             cpu_data: Box::new(CpuTileData {
-                filled: 0,
+                filled: false,
+                vr: 0.,
+                vg : 0.,
+                vb : 0.,
                 children: [const { Option::None }; 8],
                 x: 0,
                 y: 0,
                 z: 0,
-                w,
+                d,
             }),
             ..Default::default()
         }
@@ -103,7 +115,7 @@ impl MapData {
         );
     }
 }
-impl MapData{
+impl MapData {
     pub fn get_group_layout(&self, device: &wgpu::Device) -> wgpu::BindGroupLayout {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: None,
@@ -149,25 +161,20 @@ impl MapData{
             ],
         }))
     }
-
-
 }
 impl MapData {
     pub fn retrieve_value(&mut self, tar_pos: (u32, u32, u32)) -> Result<Box<CpuTileData>, ()> {
         let mut cur_tile = &mut self.cpu_data;
         loop {
-            if cur_tile.w == 1 {
-                if cur_tile.x == tar_pos.0 && cur_tile.y == tar_pos.1  && cur_tile.z == tar_pos.2{
-                    return Ok(cur_tile.clone());
-                }
-                break;
+            if cur_tile.filled {
+                return Ok(cur_tile.clone());
             }
 
-            let nw = cur_tile.w / 2;
+            let w = 2_u32.pow(cur_tile.d as u32) / 2;
 
-            let id_x = if tar_pos.0 < cur_tile.x + nw { 0 } else { 1 };
-            let id_y = if tar_pos.1 < cur_tile.y + nw { 0 } else { 1 };
-            let id_z = if tar_pos.2 < cur_tile.z + nw { 0 } else { 1 };
+            let id_x = if tar_pos.0 < cur_tile.x + w { 0 } else { 1 };
+            let id_y = if tar_pos.1 < cur_tile.y + w { 0 } else { 1 };
+            let id_z = if tar_pos.2 < cur_tile.z + w { 0 } else { 1 };
 
             let id = (id_x + id_y * 2 + id_z * 4) as usize;
 
@@ -180,18 +187,19 @@ impl MapData {
         Err(())
     }
 
-    pub fn insert_value(&mut self, val: u32, tar_pos: (u32, u32, u32)) -> Result<(), ()> {
+    pub fn insert_value(&mut self, tar_pos: (u32, u32, u32), deph: i32, color : [f32; 3]) -> Result<(), ()> {
         let mut cur_tile = &mut self.cpu_data;
         loop {
-            if cur_tile.w == 1 {
-                if cur_tile.x == tar_pos.0 && cur_tile.y == tar_pos.1 && cur_tile.z == tar_pos.2 {
-                    cur_tile.filled = val;
-                    return Ok(());
-                }
-                break;
+            if cur_tile.d == deph {
+                cur_tile.vr = color[0];
+                cur_tile.vg = color[1];
+                cur_tile.vb = color[2];
+                cur_tile.filled = true;
+                return Ok(());
             }
 
-            let nw = cur_tile.w / 2;
+            let w = 2_u32.pow(cur_tile.d as u32);
+            let nw = w / 2;
 
             let id_x = if tar_pos.0 < cur_tile.x + nw { 0 } else { 1 };
             let id_y = if tar_pos.1 < cur_tile.y + nw { 0 } else { 1 };
@@ -203,17 +211,19 @@ impl MapData {
                 cur_tile = cur_tile.children[id].as_mut().unwrap();
             } else {
                 cur_tile.children[id] = Some(Box::new(CpuTileData {
-                    filled: 0,
+                    filled: false,
+                    vr : 0.,
+                    vg : 0.,
+                    vb : 0.,
                     x: cur_tile.x + nw * id_x,
                     y: cur_tile.y + nw * id_y,
                     z: cur_tile.z + nw * id_z,
-                    w: nw,
+                    d: cur_tile.d - 1,
                     children: [const { Option::None }; 8],
                 }));
                 cur_tile = cur_tile.children[id].as_mut().unwrap();
             }
         }
-        Err(())
     }
     pub fn serialize(&mut self) {
         let mut tile_data = vec![];

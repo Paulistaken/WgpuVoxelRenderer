@@ -13,7 +13,7 @@ pub struct GpuCamData {
 }
 impl Default for GpuCamData{
     fn default() -> Self {
-        Self { pos : [0.,0.,0.], roll: 0., yaw: 0., pitch: 0., h_fov: 80., v_fov: 60. }
+        Self { pos : [0.,0.,0.], roll: 0., yaw: 0., pitch: 0., h_fov: 60., v_fov: 60. }
     }
 }
 impl GpuCamData {

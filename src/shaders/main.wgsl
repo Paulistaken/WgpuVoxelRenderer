@@ -29,11 +29,14 @@ struct MapData {
 }
 struct TileData {
     filled: u32,
+    vr : f32,
+    vg : f32,
+    vb : f32,
     children: array<u32,8>,
     x: u32,
     y: u32,
     z: u32,
-    w: u32,
+    d: u32,
 }
 
 struct node_fill_return {
@@ -41,6 +44,7 @@ struct node_fill_return {
     val: u32,
     b1: vec3<u32>,
     b2: vec3<u32>,
+    col : vec3f,
 }
 
 struct VertexOutput {
@@ -120,15 +124,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let fill = traverse_ray(pos, local_yaw, local_pitch, cam_roll,cam_yaw, cam_pitch);
 
     let pid = screen_data.width * id.y + id.x;
-    pixel_data[pid].val.r = 0.;
-    pixel_data[pid].val.g = 0.;
-    pixel_data[pid].val.b = 0.;
+    pixel_data[pid].val.r = 0.1;
+    pixel_data[pid].val.g = 0.4;
+    pixel_data[pid].val.b = 0.7;
 
     if fill.typ == 0 {
-        let strg = min(5. / fill.dist, 1.);
-        pixel_data[pid].val.r = strg;
-        pixel_data[pid].val.g = strg;
-        pixel_data[pid].val.b = strg;
+        let strg = min(20. / fill.dist, 1.);
+        pixel_data[pid].val.r = strg * fill.col.r;
+        pixel_data[pid].val.g = strg * fill.col.g;
+        pixel_data[pid].val.b = strg * fill.col.b;
     }
 }
 
@@ -137,6 +141,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 struct ray_res {
     typ: u32,
     dist: f32,
+    col : vec3f,
 }
 
 fn traverse_ray(
@@ -168,7 +173,7 @@ fn traverse_ray(
     for (var s = 0; s < 200; s += 1) {
 
         if i32(pos.x) < 0 || i32(pos.y) < 0 || i32(pos.z) < 0 {
-            return ray_res(1, -1.);
+            return ray_res(1, -1., vec3f(0.,0.,0.));
         }
 
         let d = is_node_filled(vec3(
@@ -179,7 +184,7 @@ fn traverse_ray(
 
         if d.fill == 0 {
             let dist = distance(start_pos, pos);
-            return ray_res(0, dist);
+            return ray_res(0, dist, vec3f(d.col.r, d.col.g, d.col.b));
         }
         if d.fill == 1 {
             pos = cross_area(
@@ -201,7 +206,7 @@ fn traverse_ray(
             break;
         }
     }
-    return ray_res(2, 0.);
+    return ray_res(2, 0., vec3f(0., 0., 0.));
 }
 
 
@@ -245,13 +250,12 @@ fn is_node_filled(tar_pos: vec3<u32>) -> node_fill_return {
     var cur_tile = tiles[0];
 
     loop {
-        if cur_tile.w == 1 {
-            if cur_tile.filled == 0 {
-                return return_fill(0, vec3(cur_tile.x, cur_tile.y, cur_tile.z));
-            }
-            return return_fill(1, vec3(cur_tile.x, cur_tile.y, cur_tile.z));
+        if cur_tile.filled == 1{
+            return return_fill(0, vec3(cur_tile.x, cur_tile.y, cur_tile.z), vec3f(cur_tile.vr, cur_tile.vg, cur_tile.vb));
         }
-        let nw = cur_tile.w / 2;
+
+        let w = u32(pow(2., f32(cur_tile.d)));
+        let nw = w / 2;
 
         var id_x = 1;
         if tar_pos.x < cur_tile.x + nw {
@@ -282,14 +286,14 @@ fn is_node_filled(tar_pos: vec3<u32>) -> node_fill_return {
     return return_err(2);
 }
 
-fn return_fill(val: u32, pos: vec3<u32>) -> node_fill_return {
-    return node_fill_return(0, val, pos, vec3(pos.x + 1, pos.y + 1, pos.z + 1));
+fn return_fill(val: u32, pos: vec3<u32>, col : vec3f) -> node_fill_return {
+    return node_fill_return(0, val, pos, vec3(pos.x + 1, pos.y + 1, pos.z + 1), col);
 }
 fn return_area(pos: vec3<u32>, w: u32) -> node_fill_return {
-    return node_fill_return(1, 0, pos, vec3(pos.x + w, pos.y + w, pos.z + w));
+    return node_fill_return(1, 0, pos, vec3(pos.x + w, pos.y + w, pos.z + w), vec3f(0., 0., 0.));
 }
 fn return_err(err: u32) -> node_fill_return {
-    return node_fill_return(2, err, vec3(0, 0, 0), vec3(0, 0, 0));
+    return node_fill_return(2, err, vec3(0, 0, 0), vec3(0, 0, 0), vec3f(0., 0., 0.));
 }
 
 fn rotate_point(point: vec3<f32>, rotation: Quaternion) -> vec3<f32> {
