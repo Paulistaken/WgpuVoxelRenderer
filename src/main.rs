@@ -1,7 +1,9 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use rand::random_range;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
+use wgpu::{ShaderModuleDescriptor, ShaderSource};
 use winit::application::ApplicationHandler;
 use winit::event::{KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -32,19 +34,56 @@ struct App<'a> {
     window: Option<Arc<Window>>,
     state: Option<State<'a>>,
     input: input::InputManager,
-    time_log : Option<Instant>,
+    time_log: Option<Instant>,
+    delta_time: f32,
+}
 
+fn make_circle(map: &mut map::MapData, middle: (f32, f32, f32), sz: f32, dp: i32) {
+    let sz = sz / 2.;
+    let szt = 2_f32.powi(dp);
+    let range_x = ((middle.0 - sz) / szt) as u32..((middle.0 + sz) / szt) as u32;
+    let range_y = ((middle.1 - sz) / szt) as u32..((middle.1 + sz) / szt) as u32;
+    let range_z = ((middle.2 - sz) / szt) as u32..((middle.2 + sz) / szt) as u32;
+    let mmdl = |x: f32, y: f32, z: f32| {
+        f32::sqrt(
+            f32::powi(x - middle.0, 2) + f32::powi(y - middle.1, 2) + f32::powi(z - middle.2, 2),
+        )
+    };
+    for px in range_x.clone() {
+        let x = (px as f32) * szt;
+        for py in range_y.clone() {
+            let y = (py as f32) * szt;
+            for pz in range_z.clone() {
+                let z = (pz as f32) * szt;
+                let dst = mmdl(x, y, z);
+                if dst <= sz && dst >= sz - (szt * 2.) {
+                    let _ = map.insert_value(
+                        (x, y, z),
+                        dp,
+                        [
+                            random_range(0. ..1.),
+                            random_range(0. ..1.),
+                            random_range(0. ..1.),
+                        ],
+                    );
+                }
+            }
+        }
+    }
 }
 
 impl State<'_> {
     async fn new(window: Arc<Window>) -> Self {
         let size = (window.inner_size().width, window.inner_size().height);
-        let vir_size = (100, (100. * (size.1 as f32 / size.0 as f32)) as u32);
+        let vir_size = (130, (130. * (size.1 as f32 / size.0 as f32)) as u32);
 
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
         let surface = instance.create_surface(Arc::clone(&window)).unwrap();
         let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptionsBase::default())
+            .request_adapter(&wgpu::RequestAdapterOptionsBase {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                ..Default::default()
+            })
             .await
             .unwrap();
         let (device, queue) = adapter
@@ -54,61 +93,33 @@ impl State<'_> {
                         | wgpu::FeaturesWGPU::VERTEX_WRITABLE_STORAGE,
                     features_webgpu: wgpu::FeaturesWebGPU::default(),
                 },
+                required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::Performance,
                 ..Default::default()
             })
             .await
             .unwrap();
         let mut cam_data = cam::GpuCamData::new(size);
-        cam_data.pos[0] = 1.;
         let mut screen_data = screen::ScreenData::new(vir_size.0, vir_size.1);
         screen_data.set_buffers(&device);
-        let mut map_data = map::MapData::new(16);
+        let mut map_data = map::MapData::new(9);
 
-        cam_data.pos[0] = 0. * 2_u32.pow(4) as f32; 
-        cam_data.pos[1] = 2. * 2_u32.pow(4) as f32; 
-        cam_data.pos[2] = 8. * 2_u32.pow(4) as f32; 
-        
-        let dd = 2_u32.pow(8);
-        
-        for i in 0..dd{
-            let s = dd as f32 / i as f32;
-            for j in 0..(dd/8){
-                let _ = map_data.insert_value((j as f32 * 8., 0., i as f32), 0, [s, 1. / s, s]);
-            }
-        }
+        cam_data.pos[0] = 0. * 2_u32.pow(4) as f32;
+        cam_data.pos[1] = 2. * 2_u32.pow(4) as f32;
+        cam_data.pos[2] = 8. * 2_u32.pow(4) as f32;
 
-        for i in 0..8{
-            let px = 2_f32.powi(5);
-            let pz = 2_f32.powi(4);  
-            let _ = map_data.insert_value((px, 0., 2. * i as f32 * pz), 4, [1., 0., 1.]);
-            let _ = map_data.insert_value((px, 0., 2. * i as f32 * pz + pz), 4, [1., 0.1, 0.5]);
+        // gen_map(&mut map_data);
+        make_circle(&mut map_data, (64., 64., 64.), 60., 3);
+        make_circle(&mut map_data, (128., 64., 64.), 60., 2);
+        make_circle(&mut map_data, (192., 64., 64.), 60., 1);
 
-            let _ = map_data.insert_value((px - 2_f32.powi(3), 0., 2. * i as f32 * pz), 3, [0.6, 0.5, 0.3]);
-            let _ = map_data.insert_value((px - 2_f32.powi(3), 0., 2. * i as f32 * pz + pz), 3, [1., 0.5, 0.5]);
+        make_circle(&mut map_data, (64., 64., 128.), 60., -2);
+        make_circle(&mut map_data, (128., 64., 128.), 60., -1);
+        make_circle(&mut map_data, (192., 64., 128.), 60., 0);
 
-            let _ = map_data.insert_value((px - 2_f32.powi(3), 0., 2. * i as f32 * pz + 2_f32.powi(3)), 3, [0.6, 0.5, 0.3]);
-            let _ = map_data.insert_value((px - 2_f32.powi(3), 0., 2. * i as f32 * pz + pz + 2_f32.powi(3)), 3, [1., 0.5, 0.5]);
+        make_circle(&mut map_data, (128., 128., 96.), 60., -3);
 
-        }
-
-        for i in 0..8{
-            let px = 2_f32.powi(5);
-            let py = 2_f32.powi(4);
-            let pz = i as f32 * 2_f32.powi(5);  
-            let _ = map_data.insert_value((px, py, pz), 4, [1., 1., 1.]);
-            let _ = map_data.insert_value((px, py + 2_f32.powi(4), pz), 3, [1., 0., 0.]);
-
-            let _ = map_data.insert_value((px + 2_f32.powi(2), py + 2_f32.powi(4), pz + 2_f32.powi(3)), 2, [0., 1., 0.]);
-            let _ = map_data.insert_value((px, py + 2_f32.powi(4), pz + 2_f32.powi(3)), 1, [0., 0., 1.]);
-        }
-
-        let _ = map_data.insert_value((1., 5., 1.), 1, [1., 0., 0.]);
-        let _ = map_data.insert_value((1., 5., 2.), 0, [0., 1., 0.]);
-        let _ = map_data.insert_value((1., 5., 3.), -1, [0., 0., 1.]);
-        let _ = map_data.insert_value((1., 5., 4.), -2, [1., 0., 0.]);
-        let _ = map_data.insert_value((1., 5., 5.), -3, [1., 0., 0.]);
-        let _ = map_data.insert_value((1., 5., 6.), -4, [1., 0., 0.]);
-
+        map_data.optimize();
         map_data.serialize();
         map_data.make_buffers(&device);
 
@@ -131,7 +142,10 @@ impl State<'_> {
             desired_maximum_frame_latency: 2,
         };
 
-        let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/main.wgsl"));
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("Main rayshader"),
+            source: ShaderSource::Wgsl(include_str!("shaders/main.wgsl").into()),
+        });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Pipeline Layout"),
@@ -156,11 +170,9 @@ impl State<'_> {
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             fragment: Some(wgpu::FragmentState {
-                // 3.
                 module: &shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    // 4.
                     format: config.format,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
@@ -171,7 +183,7 @@ impl State<'_> {
             cache: None,
         });
         let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: None,
+            label: Some("Compute Pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader,
             entry_point: Some("cs_main"),
@@ -255,6 +267,7 @@ impl State<'_> {
         }
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
+        let _ = self.device.poll(wgpu::MaintainBase::Wait);
         Ok(())
     }
 }
@@ -278,67 +291,22 @@ impl ApplicationHandler for App<'_> {
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
-                let dur = match self.time_log.as_ref(){
-                    Some(tl) => {
-                       Instant::now().duration_since(*tl).as_millis().try_into().unwrap_or(1)
-                    }
+                let dur = match self.time_log.as_ref() {
+                    Some(tl) => Instant::now()
+                        .duration_since(*tl)
+                        .as_millis()
+                        .try_into()
+                        .unwrap_or(1),
                     None => 0,
-                } as f32 / 1000.;
+                } as f32
+                    / 1000.;
                 self.time_log = Some(Instant::now());
 
-                println!("fps: {:?}", (1. / dur.max(0.001)).round() );
+                println!("fps: {:?}", (1. / dur.max(0.001)).round());
 
-                if let Some(state) = self.state.as_mut() {
-                    if self.input.is_key_pressed(KeyCode::ShiftLeft) {
-                        state.cam_data.pos[1] -= 1.0;
-                    }
-                    if self.input.is_key_pressed(KeyCode::Space) {
-                        state.cam_data.pos[1] += 1.0;
-                    }
-                    if self.input.is_key_pressed(KeyCode::KeyW) {
-                        let dir = f32::to_radians(state.cam_data.yaw + 0.);
-                        state.cam_data.pos[2] += f32::sin(dir);
-                        state.cam_data.pos[0] += f32::cos(dir);
-                    }
-                    if self.input.is_key_pressed(KeyCode::KeyS) {
-                        let dir = f32::to_radians(state.cam_data.yaw + 180.);
-                        state.cam_data.pos[2] += f32::sin(dir);
-                        state.cam_data.pos[0] += f32::cos(dir);
-                    }
-                    if self.input.is_key_pressed(KeyCode::KeyA) {
-                        let dir = f32::to_radians(state.cam_data.yaw - 90.);
-                        state.cam_data.pos[2] += f32::sin(dir);
-                        state.cam_data.pos[0] += f32::cos(dir);
-                    }
-                    if self.input.is_key_pressed(KeyCode::KeyD) {
-                        let dir = f32::to_radians(state.cam_data.yaw + 90.);
-                        state.cam_data.pos[2] += f32::sin(dir);
-                        state.cam_data.pos[0] += f32::cos(dir);
-                    }
+                self.delta_time = dur / 0.16;
+                self.player_input();
 
-                    if self.input.is_key_pressed(KeyCode::KeyH) {
-                        state.cam_data.yaw -= 3.;
-                    }
-                    if self.input.is_key_pressed(KeyCode::KeyL) {
-                        state.cam_data.yaw += 3.;
-                    }
-                    if self.input.is_key_pressed(KeyCode::KeyK) {
-                        state.cam_data.pitch += 3.;
-                    }
-                    if self.input.is_key_pressed(KeyCode::KeyJ) {
-                        state.cam_data.pitch -= 3.;
-                    }
-                    if self.input.is_key_pressed(KeyCode::KeyE) {
-                        state.cam_data.roll += 1.;
-                    }
-                    if self.input.is_key_pressed(KeyCode::KeyQ) {
-                        state.cam_data.roll -= 1.;
-                    }
-
-
-                    let _ = state.render();
-                }
-                // can render here instead.
                 self.window.as_ref().unwrap().request_redraw();
             }
             WindowEvent::KeyboardInput {
@@ -349,6 +317,62 @@ impl ApplicationHandler for App<'_> {
                 self.input.key_event(&event);
             }
             _ => (),
+        }
+    }
+}
+impl App<'_> {
+    fn player_input(&mut self) {
+        if let Some(state) = self.state.as_mut() {
+            let speed = 5. * self.delta_time;
+            let cam_speed = 9. * self.delta_time;
+
+            if self.input.is_key_pressed(KeyCode::ShiftLeft) {
+                state.cam_data.pos[1] -= speed;
+            }
+            if self.input.is_key_pressed(KeyCode::Space) {
+                state.cam_data.pos[1] += speed;
+            }
+            if self.input.is_key_pressed(KeyCode::KeyW) {
+                let dir = f32::to_radians(state.cam_data.yaw + 0.);
+                state.cam_data.pos[2] += f32::sin(dir) * speed;
+                state.cam_data.pos[0] += f32::cos(dir) * speed;
+            }
+            if self.input.is_key_pressed(KeyCode::KeyS) {
+                let dir = f32::to_radians(state.cam_data.yaw + 180.);
+                state.cam_data.pos[2] += f32::sin(dir) * speed;
+                state.cam_data.pos[0] += f32::cos(dir) * speed;
+            }
+            if self.input.is_key_pressed(KeyCode::KeyA) {
+                let dir = f32::to_radians(state.cam_data.yaw - 90.);
+                state.cam_data.pos[2] += f32::sin(dir) * speed;
+                state.cam_data.pos[0] += f32::cos(dir) * speed;
+            }
+            if self.input.is_key_pressed(KeyCode::KeyD) {
+                let dir = f32::to_radians(state.cam_data.yaw + 90.);
+                state.cam_data.pos[2] += f32::sin(dir) * speed;
+                state.cam_data.pos[0] += f32::cos(dir) * speed;
+            }
+
+            if self.input.is_key_pressed(KeyCode::KeyH) {
+                state.cam_data.yaw -= cam_speed;
+            }
+            if self.input.is_key_pressed(KeyCode::KeyL) {
+                state.cam_data.yaw += cam_speed;
+            }
+            if self.input.is_key_pressed(KeyCode::KeyK) {
+                state.cam_data.pitch += cam_speed;
+            }
+            if self.input.is_key_pressed(KeyCode::KeyJ) {
+                state.cam_data.pitch -= cam_speed;
+            }
+            if self.input.is_key_pressed(KeyCode::KeyE) {
+                state.cam_data.roll += cam_speed;
+            }
+            if self.input.is_key_pressed(KeyCode::KeyQ) {
+                state.cam_data.roll -= cam_speed;
+            }
+
+            let _ = state.render();
         }
     }
 }

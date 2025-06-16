@@ -5,9 +5,9 @@ use wgpu::util::DeviceExt;
 #[derive(Default, Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GpuTileData {
     pub filled: u32,
-    vr : f32,
-    vg : f32,
-    vb : f32,
+    vr: f32,
+    vg: f32,
+    vb: f32,
     pub children: [u32; 8],
     pub x: f32,
     pub y: f32,
@@ -18,9 +18,9 @@ pub struct GpuTileData {
 #[derive(Default, Debug, Clone)]
 pub struct CpuTileData {
     pub filled: bool,
-    pub vr : f32,
-    pub vg : f32,
-    pub vb : f32,
+    pub vr: f32,
+    pub vg: f32,
+    pub vb: f32,
     pub children: [Option<Box<CpuTileData>>; 8],
     pub x: f32,
     pub y: f32,
@@ -45,6 +45,40 @@ pub struct MapData {
     gpu_data_buffer: Option<wgpu::Buffer>,
 }
 impl CpuTileData {
+    fn optimize(&mut self) {
+        if self.filled {
+            self.children.iter_mut().for_each(|c| {
+                *c = None;
+            });
+            return;
+        }
+
+        for c in self.children.iter_mut() {
+            if let Some(c) = c.as_mut() {
+                c.optimize();
+            }
+        }
+        let a = !self.children.iter().any(|c| c.is_none());
+        let b = !self
+            .children
+            .iter()
+            .filter_map(|c| c.as_ref())
+            .any(|c| !c.filled);
+        if a && b {
+            let clr = self
+                .children
+                .iter()
+                .map(|c| c.as_ref().unwrap())
+                .fold([0., 0., 0.], |a, c| [a[0] + c.vr, a[1] + c.vg, a[2] + c.vb]);
+            self.filled = true;
+            self.vr = clr[0] / 8.;
+            self.vg = clr[1] / 8.;
+            self.vb = clr[2] / 8.;
+            self.children.iter_mut().for_each(|c| {
+                *c = None;
+            });
+        }
+    }
     fn serialize(
         &self,
         global_index: &mut u32,
@@ -56,16 +90,18 @@ impl CpuTileData {
         gpu_data.push(GpuTileData::default());
         indexed.push(index);
         let mut indexes = [0_u32; 8];
+
         for (i, child) in self.children.iter().enumerate() {
             if let Some(child) = child.as_ref() {
                 indexes[i] = child.serialize(global_index, gpu_data, indexed);
             }
         }
+
         gpu_data[index as usize] = GpuTileData {
             filled: if self.filled { 1 } else { 0 },
-            vr : self.vr,
-            vg : self.vg,
-            vb : self.vb,
+            vr: self.vr,
+            vg: self.vg,
+            vb: self.vb,
             children: indexes,
             x: self.x,
             y: self.y,
@@ -87,8 +123,8 @@ impl MapData {
             cpu_data: Box::new(CpuTileData {
                 filled: false,
                 vr: 0.,
-                vg : 0.,
-                vb : 0.,
+                vg: 0.,
+                vb: 0.,
                 children: [const { Option::None }; 8],
                 x: 0.,
                 y: 0.,
@@ -187,7 +223,12 @@ impl MapData {
         Err(())
     }
 
-    pub fn insert_value(&mut self, tar_pos: (f32, f32, f32), deph: i32, color : [f32; 3]) -> Result<(), ()> {
+    pub fn insert_value(
+        &mut self,
+        tar_pos: (f32, f32, f32),
+        deph: i32,
+        color: [f32; 3],
+    ) -> Result<(), ()> {
         let mut cur_tile = &mut self.cpu_data;
         loop {
             if cur_tile.d == deph {
@@ -212,9 +253,9 @@ impl MapData {
             } else {
                 cur_tile.children[id] = Some(Box::new(CpuTileData {
                     filled: false,
-                    vr : 0.,
-                    vg : 0.,
-                    vb : 0.,
+                    vr: 0.,
+                    vg: 0.,
+                    vb: 0.,
                     x: cur_tile.x + nw * id_x as f32,
                     y: cur_tile.y + nw * id_y as f32,
                     z: cur_tile.z + nw * id_z as f32,
@@ -224,6 +265,9 @@ impl MapData {
                 cur_tile = cur_tile.children[id].as_mut().unwrap();
             }
         }
+    }
+    pub fn optimize(&mut self) {
+        self.cpu_data.optimize();
     }
     pub fn serialize(&mut self) {
         let mut tile_data = vec![];
