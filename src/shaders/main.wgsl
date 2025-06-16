@@ -192,9 +192,9 @@ fn traverse_ray(
                 pos,
                 mov,
                 vec3(
-                    d.b1.x - d.size / 50.,
-                    d.b1.y - d.size / 50.,
-                    d.b1.z - d.size / 50.
+                    d.b1.x - d.size / 90.,
+                    d.b1.y - d.size / 90.,
+                    d.b1.z - d.size / 90.
                 ),
                 vec3(
                     d.b2.x,
@@ -343,5 +343,5 @@ fn get_angle_pitch(id_y: u32) -> f32 {
 }
 
 fn distance(a: vec3<f32>, b: vec3<f32>) -> f32 {
-    return sqrt(pow(a.x - b.x, 2) + pow(a.y - b.y, 2) + pow(a.z - b.z, 2));
+    return sqrt(pow(a.x - b.x, 2.) + pow(a.y - b.y, 2.) + pow(a.z - b.z, 2.));
 }

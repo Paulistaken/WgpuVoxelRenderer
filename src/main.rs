@@ -1,11 +1,11 @@
+use std::iter;
 use std::sync::Arc;
 use std::time::Instant;
 
 use rand::random_range;
-use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{ShaderModuleDescriptor, ShaderSource};
 use winit::application::ApplicationHandler;
-use winit::event::{KeyEvent, WindowEvent};
+use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::KeyCode;
 use winit::window::{Window, WindowId};
@@ -29,6 +29,10 @@ struct State<'a> {
     cam_data: cam::GpuCamData,
 }
 
+struct EguiState {
+    state: egui_winit::State,
+}
+
 #[derive(Default)]
 struct App<'a> {
     window: Option<Arc<Window>>,
@@ -36,9 +40,24 @@ struct App<'a> {
     input: input::InputManager,
     time_log: Option<Instant>,
     delta_time: f32,
+    egui: Option<EguiState>,
 }
 
-fn make_circle(map: &mut map::MapData, middle: (f32, f32, f32), sz: f32, dp: i32) {
+fn gen_spiral(map : &mut map::MapData, mut pos : (f32, f32, f32), in_dp : i32, max_dp : i32){
+    let mut st = 0;
+    let mut dp = in_dp;
+    while dp >= max_dp{
+        let sz = 2_f32.powi(dp);
+        let _ = map.insert_value(pos, dp, [random_range(0. ..1.), random_range(0. ..1.), random_range(0. ..1.)]);
+        match st{
+            0 => {pos.0 += sz; st = 1},
+            1 => {pos.1 += sz; st = 2},
+          _ => {pos.2 += sz; st = 0},
+        }
+        dp -= 1;
+    }
+}
+fn gen_sphere(map: &mut map::MapData, middle: (f32, f32, f32), sz: f32, dp: i32) {
     let sz = sz / 2.;
     let szt = 2_f32.powi(dp);
     let range_x = ((middle.0 - sz) / szt) as u32..((middle.0 + sz) / szt) as u32;
@@ -87,18 +106,19 @@ impl State<'_> {
             .await
             .unwrap();
         let (device, queue) = adapter
-            .request_device(&wgpu::wgt::DeviceDescriptor {
-                required_features: wgpu::Features {
-                    features_wgpu: wgpu::FeaturesWGPU::default()
-                        | wgpu::FeaturesWGPU::VERTEX_WRITABLE_STORAGE,
-                    features_webgpu: wgpu::FeaturesWebGPU::default(),
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    required_features: wgpu::Features::default()
+                        | wgpu::Features::VERTEX_WRITABLE_STORAGE,
+                    required_limits: wgpu::Limits::default(),
+                    memory_hints: wgpu::MemoryHints::Performance,
+                    ..Default::default()
                 },
-                required_limits: wgpu::Limits::default(),
-                memory_hints: wgpu::MemoryHints::Performance,
-                ..Default::default()
-            })
+                None,
+            )
             .await
             .unwrap();
+
         let mut cam_data = cam::GpuCamData::new(size);
         let mut screen_data = screen::ScreenData::new(vir_size.0, vir_size.1);
         screen_data.set_buffers(&device);
@@ -109,15 +129,17 @@ impl State<'_> {
         cam_data.pos[2] = 8. * 2_u32.pow(4) as f32;
 
         // gen_map(&mut map_data);
-        make_circle(&mut map_data, (64., 64., 64.), 60., 3);
-        make_circle(&mut map_data, (128., 64., 64.), 60., 2);
-        make_circle(&mut map_data, (192., 64., 64.), 60., 1);
+        gen_sphere(&mut map_data, (64., 64., 64.), 60., 3);
+        gen_sphere(&mut map_data, (128., 64., 64.), 60., 2);
+        gen_sphere(&mut map_data, (192., 64., 64.), 60., 1);
 
-        make_circle(&mut map_data, (64., 64., 128.), 60., -2);
-        make_circle(&mut map_data, (128., 64., 128.), 60., -1);
-        make_circle(&mut map_data, (192., 64., 128.), 60., 0);
+        gen_sphere(&mut map_data, (64., 64., 128.), 60., -2);
+        gen_sphere(&mut map_data, (128., 64., 128.), 60., -1);
+        gen_sphere(&mut map_data, (192., 64., 128.), 60., 0);
 
-        make_circle(&mut map_data, (128., 128., 96.), 60., -3);
+        gen_sphere(&mut map_data, (128., 128., 96.), 60., -3);
+
+        gen_spiral(&mut map_data, (32., 128., 64.), 5, -5);
 
         map_data.optimize();
         map_data.serialize();
@@ -205,12 +227,14 @@ impl State<'_> {
             cam_data,
         }
     }
-    fn render(&self) -> Result<(), Box<dyn std::error::Error>> {
+    fn render(
+        &self,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         self.surface.configure(&self.device, &self.config);
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
-            .create_view(&wgpu::wgt::TextureViewDescriptor::default());
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
         let screen_bind_group = self.screen_data.get_bind_group(&self.device).unwrap();
 
@@ -239,25 +263,27 @@ impl State<'_> {
         }
 
         {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.8,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
+            let mut render_pass = encoder
+                .begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Render Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 0.1,
+                                g: 0.2,
+                                b: 0.8,
+                                a: 1.0,
+                            }),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                });
+
             render_pass.set_bind_group(0, Some(&screen_bind_group), &[]);
             render_pass.set_bind_group(1, Some(&map_bind_group), &[]);
             render_pass.set_bind_group(2, Some(&cam_bind_group), &[]);
@@ -267,7 +293,7 @@ impl State<'_> {
         }
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
-        let _ = self.device.poll(wgpu::MaintainBase::Wait);
+        // let _ = self.device.poll(wgpu::MaintainBase::Wait);
         Ok(())
     }
 }
@@ -306,6 +332,12 @@ impl ApplicationHandler for App<'_> {
 
                 self.delta_time = dur / 0.16;
                 self.player_input();
+
+                let _ = self
+                    .state
+                    .as_mut()
+                    .unwrap()
+                    .render();
 
                 self.window.as_ref().unwrap().request_redraw();
             }
@@ -371,8 +403,6 @@ impl App<'_> {
             if self.input.is_key_pressed(KeyCode::KeyQ) {
                 state.cam_data.roll -= cam_speed;
             }
-
-            let _ = state.render();
         }
     }
 }

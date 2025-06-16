@@ -1,26 +1,33 @@
 use bytemuck::bytes_of;
-use wgpu::{util::DeviceExt, wgc::device};
+use wgpu::util::DeviceExt;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GpuCamData {
-    pub pos : [f32; 3],
-    pub roll : f32,
+    pub pos: [f32; 3],
+    pub roll: f32,
     pub yaw: f32,
-    pub pitch : f32,
-    h_fov : f32,
-    v_fov : f32,
+    pub pitch: f32,
+    h_fov: f32,
+    v_fov: f32,
 }
-impl GpuCamData{
-    pub fn new(dims : (u32, u32)) -> Self{
+impl GpuCamData {
+    pub fn new(dims: (u32, u32)) -> Self {
         let mut cm = Self::default();
         cm.v_fov = cm.h_fov * (dims.1 as f32 / dims.0 as f32);
         cm
     }
 }
-impl Default for GpuCamData{
+impl Default for GpuCamData {
     fn default() -> Self {
-        Self { pos : [0.,0.,0.], roll: 0., yaw: 0., pitch: 0., h_fov: 60., v_fov: 60. }
+        Self {
+            pos: [0., 0., 0.],
+            roll: 0.,
+            yaw: 0.,
+            pitch: 0.,
+            h_fov: 60.,
+            v_fov: 60.,
+        }
     }
 }
 impl GpuCamData {
