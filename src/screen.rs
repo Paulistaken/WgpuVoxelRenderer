@@ -10,7 +10,9 @@ pub struct GpuScreenData {
 #[repr(C)]
 #[derive(Default, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GpuPixelData {
-    pub val : [f32;4],
+    pub val: [f32; 4],
+    pub deph: f32,
+    _fill: [f32; 3],
 }
 
 #[derive(Default)]
@@ -24,7 +26,14 @@ pub struct ScreenData {
 impl ScreenData {
     pub fn new(width: u32, heigth: u32) -> Self {
         let gpu_data = GpuScreenData { width, heigth };
-        let pixel_data = vec![GpuPixelData{val : [0.1, 0.2, 0.8, 1.0]}; (width * heigth) as usize];
+        let pixel_data = vec![
+            GpuPixelData {
+                val: [0.1, 0.2, 0.8, 1.0],
+                deph: -1.,
+                ..Default::default()
+            };
+            (width * heigth) as usize
+        ];
         Self {
             gpu_data,
             pixel_data,
@@ -93,4 +102,3 @@ impl ScreenData {
         }))
     }
 }
-

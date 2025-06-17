@@ -30,15 +30,17 @@ pub struct CpuTileData {
 
 #[repr(C)]
 #[derive(Default, Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct GpuMapData {
-    pub width: u32,
-    pub heigth: u32,
-    pub deph: u32,
+pub struct GpuChunkData {
+    pub max_d: i32,
+    pub size: f32,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
 }
 
 #[derive(Default, Debug, Clone)]
-pub struct MapData {
-    pub map_data: GpuMapData,
+pub struct ChunkData {
+    pub gpu_chunk_data: GpuChunkData,
     cpu_data: Box<CpuTileData>,
     gpu_data: Vec<GpuTileData>,
     gpu_mapdata_buffer: Option<wgpu::Buffer>,
@@ -91,9 +93,11 @@ impl CpuTileData {
         indexed.push(index);
         let mut indexes = [0_u32; 8];
 
-        for (i, child) in self.children.iter().enumerate() {
-            if let Some(child) = child.as_ref() {
-                indexes[i] = child.serialize(global_index, gpu_data, indexed);
+        if !self.filled {
+            for (i, child) in self.children.iter().enumerate() {
+                if let Some(child) = child.as_ref() {
+                    indexes[i] = child.serialize(global_index, gpu_data, indexed);
+                }
             }
         }
 
@@ -111,13 +115,15 @@ impl CpuTileData {
         index
     }
 }
-impl MapData {
+impl ChunkData {
     pub fn new(d: i32) -> Self {
         Self {
-            map_data: GpuMapData {
-                width: 2_u32.pow(d as u32),
-                heigth: 2_u32.pow(d as u32),
-                deph: 2_u32.pow(d as u32),
+            gpu_chunk_data: GpuChunkData {
+                max_d: d,
+                size: 2_f32.powi(d),
+                x: 0.,
+                y: 0.,
+                z: 0.,
             },
             gpu_data: Vec::new(),
             cpu_data: Box::new(CpuTileData {
@@ -138,7 +144,7 @@ impl MapData {
         self.gpu_mapdata_buffer = Some(device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: None,
-                contents: bytes_of(&self.map_data),
+                contents: bytes_of(&self.gpu_chunk_data),
                 usage: wgpu::BufferUsages::STORAGE,
             },
         ));
@@ -151,7 +157,7 @@ impl MapData {
         );
     }
 }
-impl MapData {
+impl ChunkData {
     pub fn get_group_layout(&self, device: &wgpu::Device) -> wgpu::BindGroupLayout {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: None,
@@ -198,7 +204,7 @@ impl MapData {
         }))
     }
 }
-impl MapData {
+impl ChunkData {
     pub fn retrieve_value(&mut self, tar_pos: (f32, f32, f32)) -> Result<Box<CpuTileData>, ()> {
         let mut cur_tile = &mut self.cpu_data;
         loop {

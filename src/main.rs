@@ -1,4 +1,3 @@
-use std::iter;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -16,21 +15,22 @@ mod map;
 mod screen;
 
 struct State<'a> {
-    instance: wgpu::Instance,
+    _instance: wgpu::Instance,
     surface: wgpu::Surface<'a>,
-    adapter: wgpu::Adapter,
+    _adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
-    render_pipeline: wgpu::RenderPipeline,
-    compute_pipeline: wgpu::ComputePipeline,
+    clean_pipeline: wgpu::RenderPipeline,
+    voxel_render_pipeline: wgpu::RenderPipeline,
+    chunk_pipeline: wgpu::ComputePipeline,
     screen_data: screen::ScreenData,
-    map_data: map::MapData,
+    map_data: Vec<map::ChunkData>,
     cam_data: cam::GpuCamData,
 }
 
-struct EguiState {
-    state: egui_winit::State,
+struct _EguiState {
+    _state: egui_winit::State,
 }
 
 #[derive(Default)]
@@ -40,24 +40,41 @@ struct App<'a> {
     input: input::InputManager,
     time_log: Option<Instant>,
     delta_time: f32,
-    egui: Option<EguiState>,
+    _egui: Option<_EguiState>,
 }
 
-fn gen_spiral(map : &mut map::MapData, mut pos : (f32, f32, f32), in_dp : i32, max_dp : i32){
+fn gen_spiral(map: &mut map::ChunkData, mut pos: (f32, f32, f32), in_dp: i32, max_dp: i32) {
     let mut st = 0;
     let mut dp = in_dp;
-    while dp >= max_dp{
+    while dp >= max_dp {
         let sz = 2_f32.powi(dp);
-        let _ = map.insert_value(pos, dp, [random_range(0. ..1.), random_range(0. ..1.), random_range(0. ..1.)]);
-        match st{
-            0 => {pos.0 += sz; st = 1},
-            1 => {pos.1 += sz; st = 2},
-          _ => {pos.2 += sz; st = 0},
+        let _ = map.insert_value(
+            pos,
+            dp,
+            [
+                random_range(0. ..1.),
+                random_range(0. ..1.),
+                random_range(0. ..1.),
+            ],
+        );
+        match st {
+            0 => {
+                pos.0 += sz;
+                st = 1
+            }
+            1 => {
+                pos.1 += sz;
+                st = 2
+            }
+            _ => {
+                pos.2 += sz;
+                st = 0
+            }
         }
         dp -= 1;
     }
 }
-fn gen_sphere(map: &mut map::MapData, middle: (f32, f32, f32), sz: f32, dp: i32) {
+fn gen_sphere(map: &mut map::ChunkData, middle: (f32, f32, f32), sz: f32, dp: i32) {
     let sz = sz / 2.;
     let szt = 2_f32.powi(dp);
     let range_x = ((middle.0 - sz) / szt) as u32..((middle.0 + sz) / szt) as u32;
@@ -122,28 +139,16 @@ impl State<'_> {
         let mut cam_data = cam::GpuCamData::new(size);
         let mut screen_data = screen::ScreenData::new(vir_size.0, vir_size.1);
         screen_data.set_buffers(&device);
-        let mut map_data = map::MapData::new(9);
-
-        cam_data.pos[0] = 0. * 2_u32.pow(4) as f32;
-        cam_data.pos[1] = 2. * 2_u32.pow(4) as f32;
-        cam_data.pos[2] = 8. * 2_u32.pow(4) as f32;
-
-        // gen_map(&mut map_data);
-        gen_sphere(&mut map_data, (64., 64., 64.), 60., 3);
-        gen_sphere(&mut map_data, (128., 64., 64.), 60., 2);
-        gen_sphere(&mut map_data, (192., 64., 64.), 60., 1);
-
-        gen_sphere(&mut map_data, (64., 64., 128.), 60., -2);
-        gen_sphere(&mut map_data, (128., 64., 128.), 60., -1);
-        gen_sphere(&mut map_data, (192., 64., 128.), 60., 0);
-
-        gen_sphere(&mut map_data, (128., 128., 96.), 60., -3);
-
-        gen_spiral(&mut map_data, (32., 128., 64.), 5, -5);
-
-        map_data.optimize();
-        map_data.serialize();
-        map_data.make_buffers(&device);
+        let mut chunks = vec![];
+        for i in 0..10 {
+            let mut map_data = map::ChunkData::new(9);
+            gen_sphere(&mut map_data, (64., 64., 64.), 60., random_range(-3..4));
+            map_data.gpu_chunk_data.x = 128. * (i as f32);
+            map_data.optimize();
+            map_data.serialize();
+            map_data.make_buffers(&device);
+            chunks.push(map_data);
+        }
 
         let surface_caps = surface.get_capabilities(&adapter);
         let surface_format = surface_caps
@@ -164,26 +169,37 @@ impl State<'_> {
             desired_maximum_frame_latency: 2,
         };
 
-        let shader = device.create_shader_module(ShaderModuleDescriptor {
+        let compute_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("Main rayshader"),
             source: ShaderSource::Wgsl(include_str!("shaders/main.wgsl").into()),
         });
-
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Pipeline Layout"),
-            bind_group_layouts: &[
-                &screen_data.get_group_layout(&device),
-                &map_data.get_group_layout(&device),
-                &cam_data.get_layout(&device),
-            ],
-            push_constant_ranges: &[],
+        let render_shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("Main rayshader"),
+            source: ShaderSource::Wgsl(include_str!("shaders/render.wgsl").into()),
         });
+
+        let compute_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Pipeline Layout"),
+                bind_group_layouts: &[
+                    &screen_data.get_group_layout(&device),
+                    &chunks[0].get_group_layout(&device),
+                    &cam_data.get_layout(&device),
+                ],
+                push_constant_ranges: &[],
+            });
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Pipeline Layout"),
+                bind_group_layouts: &[&screen_data.get_group_layout(&device)],
+                push_constant_ranges: &[],
+            });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
-            layout: Some(&pipeline_layout),
+            layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &shader,
+                module: &render_shader,
                 entry_point: Some("vs_main"),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 buffers: &[],
@@ -192,7 +208,7 @@ impl State<'_> {
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             fragment: Some(wgpu::FragmentState {
-                module: &shader,
+                module: &render_shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
@@ -204,41 +220,66 @@ impl State<'_> {
             multiview: None,
             cache: None,
         });
+        let render_pipeline_clear =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: None,
+                layout: Some(&render_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &render_shader,
+                    entry_point: Some("vs_main"),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    buffers: &[],
+                },
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &render_shader,
+                    entry_point: Some("fs_clear"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: config.format,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                }),
+                multiview: None,
+                cache: None,
+            });
+
         let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("Compute Pipeline"),
-            layout: Some(&pipeline_layout),
-            module: &shader,
+            layout: Some(&compute_pipeline_layout),
+            module: &compute_shader,
             entry_point: Some("cs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             cache: None,
         });
 
         Self {
-            instance,
+            _instance: instance,
             config,
-            adapter,
+            _adapter: adapter,
             surface,
             device,
             queue,
-            render_pipeline,
-            compute_pipeline,
+            clean_pipeline: render_pipeline_clear,
+            voxel_render_pipeline: render_pipeline,
+            chunk_pipeline: compute_pipeline,
             screen_data,
-            map_data,
+            map_data: chunks,
             cam_data,
         }
     }
-    fn render(
-        &self,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        self.surface.configure(&self.device, &self.config);
-        let output = self.surface.get_current_texture()?;
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
+    fn compue_chunk(&self, map_id: usize) -> Result<(), Box<dyn std::error::Error>> {
         let screen_bind_group = self.screen_data.get_bind_group(&self.device).unwrap();
 
-        let map_bind_group = self.map_data.get_bind_group(&self.device).unwrap();
+        let map_bind_group = self
+            .map_data
+            .get(map_id)
+            .unwrap()
+            .get_bind_group(&self.device)
+            .unwrap();
 
         let cam_bind_group = self.cam_data.get_bind_group(&self.device);
 
@@ -254,46 +295,64 @@ impl State<'_> {
             compute_pass.set_bind_group(1, Some(&map_bind_group), &[]);
             compute_pass.set_bind_group(2, Some(&cam_bind_group), &[]);
 
-            compute_pass.set_pipeline(&self.compute_pipeline);
+            compute_pass.set_pipeline(&self.chunk_pipeline);
             compute_pass.dispatch_workgroups(
                 self.screen_data.gpu_data.width,
                 self.screen_data.gpu_data.heigth,
                 1,
             );
         }
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        self.device.poll(wgpu::MaintainBase::Wait);
+
+        Ok(())
+    }
+    fn render(&self) -> Result<(), Box<dyn std::error::Error>> {
+        self.surface.configure(&self.device, &self.config);
+        let output = self.surface.get_current_texture()?;
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let screen_bind_group = self.screen_data.get_bind_group(&self.device).unwrap();
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
 
         {
-            let mut render_pass = encoder
-                .begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Render Pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color {
-                                r: 0.1,
-                                g: 0.2,
-                                b: 0.8,
-                                a: 1.0,
-                            }),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    occlusion_query_set: None,
-                    timestamp_writes: None,
-                });
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.1,
+                            g: 0.2,
+                            b: 0.8,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
 
             render_pass.set_bind_group(0, Some(&screen_bind_group), &[]);
-            render_pass.set_bind_group(1, Some(&map_bind_group), &[]);
-            render_pass.set_bind_group(2, Some(&cam_bind_group), &[]);
 
-            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_pipeline(&self.clean_pipeline);
+            render_pass.draw(0..6, 0..1);
+
+            render_pass.set_pipeline(&self.voxel_render_pipeline);
             render_pass.draw(0..6, 0..1);
         }
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
-        // let _ = self.device.poll(wgpu::MaintainBase::Wait);
+        let _ = self.device.poll(wgpu::MaintainBase::Wait);
         Ok(())
     }
 }
@@ -333,11 +392,13 @@ impl ApplicationHandler for App<'_> {
                 self.delta_time = dur / 0.16;
                 self.player_input();
 
-                let _ = self
-                    .state
-                    .as_mut()
-                    .unwrap()
-                    .render();
+                let ln = self.state.as_ref().unwrap().map_data.len();
+
+                for i in 0..ln {
+                    let _ = self.state.as_mut().unwrap().compue_chunk(i);
+                }
+
+                let _ = self.state.as_mut().unwrap().render();
 
                 self.window.as_ref().unwrap().request_redraw();
             }
