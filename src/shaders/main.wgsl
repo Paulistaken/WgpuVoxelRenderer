@@ -75,7 +75,7 @@ struct node_fill_return {
 
     let pos = vec3f(cam_data.pos.x, cam_data.pos.y, cam_data.pos.z);
 
-    var max_dist = 200.;
+    var max_dist = 3000.;
     if pixel_data[pid].deph > 0. {
         max_dist = min(max_dist, pixel_data[pid].deph);
     }
@@ -141,10 +141,6 @@ fn traverse_ray(
             break;
         }
 
-        if i32(pos.x) < 0 || i32(pos.y) < 0 || i32(pos.z) < 0 {
-            return ray_res(1, -1., vec3f(0., 0., 0.));
-        }
-
         let d = is_node_filled(vec3(
             pos.x,
             pos.y,
@@ -184,48 +180,76 @@ struct enterchunk {
 }
 
 fn enter_chunk(start_pos: vec3f, mov: vec3f, chunk_pos: vec3f, chunk_size: f32, max_dist: f32) -> enterchunk {
-    if start_pos.x >= chunk_pos.x && start_pos.x <= chunk_pos.x + chunk_size {
-        if start_pos.y >= chunk_pos.y && start_pos.y <= chunk_pos.y + chunk_size {
-            if start_pos.z >= chunk_pos.z && start_pos.z <= chunk_pos.z + chunk_size {
+
+    if start_pos.x >= chunk_pos.x && start_pos.x < chunk_pos.x + chunk_size {
+        if start_pos.y >= chunk_pos.y && start_pos.y < chunk_pos.y + chunk_size {
+            if start_pos.z >= chunk_pos.z && start_pos.z < chunk_pos.z + chunk_size {
                 return enterchunk(1, start_pos);
             }
         }
     }
+
     var t = max_dist + 10.;
     var d = 0.;
 
-    d = (chunk_pos.x - start_pos.x) / mov.x;
-    if d > 0. {
-        t = min(t, d);
+    if mov.x != 0. {
+        d = (chunk_pos.x - start_pos.x) / mov.x;
+        if d > 0. {
+            if mov.x > 0.{
+                t = min(t, d + 0.1);
+            }else{
+                t = min(t, d - 0.1);
+            }
+        }
+        d = (chunk_pos.x + chunk_size - start_pos.x) / mov.x;
+        if d > 0. {
+            if mov.x > 0.{
+                t = min(t, d - 0.1);
+            }else{
+                t = min(t, d + 0.1);
+            }
+        }
     }
-    d = (chunk_pos.x + chunk_size - start_pos.x) / mov.x;
-    if d > 0. {
-        t = min(t, d);
+    if mov.y != 0. {
+        d = (chunk_pos.y - start_pos.y) / mov.y;
+        if d > 0. {
+            if mov.y > 0.{
+                t = min(t, d + 0.1);
+            }else{
+                t = min(t, d - 0.1);
+            }
+        }
+        d = (chunk_pos.y + chunk_size - start_pos.y) / mov.y;
+        if d > 0. {
+            if mov.y > 0.{
+                t = min(t, d - 0.1);
+            }else{
+                t = min(t, d + 0.1);
+            }
+        }
     }
-
-    d = (chunk_pos.y - start_pos.y) / mov.y;
-    if d > 0. {
-        t = min(t, d);
-    }
-    d = (chunk_pos.y + chunk_size - start_pos.y) / mov.y;
-    if d > 0. {
-        t = min(t, d);
-    }
-
-    d = (chunk_pos.z - start_pos.z) / mov.z;
-    if d > 0. {
-        t = min(t, d);
-    }
-    d = (chunk_pos.z + chunk_size - start_pos.z) / mov.z;
-    if d > 0. {
-        t = min(t, d);
+    if mov.z != 0. {
+        d = (chunk_pos.z - start_pos.z) / mov.z;
+        if d > 0. {
+            if mov.z > 0.{
+                t = min(t, d + 0.1);
+            }else{
+                t = min(t, d - 0.1);
+            }
+        }
+        d = (chunk_pos.z + chunk_size - start_pos.z) / mov.z;
+        if d > 0. {
+            if mov.z > 0.{
+                t = min(t, d - 0.1);
+            }else{
+                t = min(t, d + 0.1);
+            }
+        }
     }
 
     if t >= max_dist {
         return enterchunk(0, vec3f(0., 0., 0.));
     }
-
-    t += 0.1;
 
     let npos = start_pos + mov * t;
     return enterchunk(1, npos);
@@ -233,23 +257,36 @@ fn enter_chunk(start_pos: vec3f, mov: vec3f, chunk_pos: vec3f, chunk_size: f32, 
 
 fn cross_area(pos: vec3<f32>, mov: vec3<f32>, b1: vec3<f32>, b2: vec3<f32>) -> vec3<f32> {
     var t = 10000.;
-
-    if mov.x > 0.0 {
-        t = min(t, abs((pos.x - b2.x) / mov.x));
-    } else {
-        t = min(t, abs((pos.x - b1.x) / mov.x));
+    var d = 0.;
+    if mov.x != 0. {
+        d = (b1.x - pos.x) / mov.x;
+        if d > 0. {
+            t = min(t, d);
+        }
+        d = (b2.x - pos.x) / mov.x;
+        if d > 0. {
+            t = min(t, d);
+        }
     }
-
-    if mov.y > 0.0 {
-        t = min(t, abs((pos.y - b2.y) / mov.y));
-    } else {
-        t = min(t, abs((pos.y - b1.y) / mov.y));
+    if mov.y != 0. {
+        d = (b1.y - pos.y) / mov.y;
+        if d > 0. {
+            t = min(t, d);
+        }
+        d = (b2.y - pos.y) / mov.y;
+        if d > 0. {
+            t = min(t, d);
+        }
     }
-
-    if mov.z > 0.0 {
-        t = min(t, abs((pos.z - b2.z) / mov.z));
-    } else {
-        t = min(t, abs((pos.z - b1.z) / mov.z));
+    if mov.z != 0. {
+        d = (b1.z - pos.z) / mov.z;
+        if d > 0. {
+            t = min(t, d);
+        }
+        d = (b2.z - pos.z) / mov.z;
+        if d > 0. {
+            t = min(t, d);
+        }
     }
 
     return vec3(pos.x + mov.x * t, pos.y + mov.y * t, pos.z + mov.z * t);
@@ -269,10 +306,6 @@ fn is_node_filled(tar_pos: vec3f) -> node_fill_return {
     var cur_tile = tiles[0];
     var w = pow(2., f32(cur_tile.d));
     loop {
-        if cur_tile.d < -5{
-            break;
-        }
-
         if cur_tile.filled == 1 {
             return return_fill(0, vec3(cur_tile.x + map_data.x, cur_tile.y + map_data.y, cur_tile.z + map_data.z), vec3f(cur_tile.vr, cur_tile.vg, cur_tile.vb), w);
         }

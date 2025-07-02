@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use bytemuck::cast;
 use rand::random_range;
 use wgpu::{ShaderModuleDescriptor, ShaderSource};
 use winit::application::ApplicationHandler;
@@ -137,13 +138,36 @@ impl State<'_> {
             .unwrap();
 
         let mut cam_data = cam::GpuCamData::new(size);
+        cam_data.pos[1] = 64.;
+        cam_data.pos[2] = 64.;
         let mut screen_data = screen::ScreenData::new(vir_size.0, vir_size.1);
         screen_data.set_buffers(&device);
         let mut chunks = vec![];
         for i in 0..10 {
-            let mut map_data = map::ChunkData::new(9);
+            let mut map_data = map::ChunkData::new(8);
             gen_sphere(&mut map_data, (64., 64., 64.), 60., random_range(-3..4));
             map_data.gpu_chunk_data.x = 128. * (i as f32);
+            map_data.optimize();
+            map_data.serialize();
+            map_data.make_buffers(&device);
+            chunks.push(map_data);
+        }
+        for i in 0..5 {
+            let mut map_data = map::ChunkData::new(7);
+            gen_sphere(&mut map_data, (32., 32., 32.), 30., random_range(-4..2));
+            map_data.gpu_chunk_data.x = 64. * (i as f32);
+            map_data.gpu_chunk_data.z = 128.;
+            map_data.optimize();
+            map_data.serialize();
+            map_data.make_buffers(&device);
+            chunks.push(map_data);
+        }
+        for i in 0..7 {
+            let mut map_data = map::ChunkData::new(7);
+            gen_sphere(&mut map_data, (32., 32., 32.), 30., random_range(-4..2));
+            map_data.gpu_chunk_data.x = 64. * (i as f32);
+            map_data.gpu_chunk_data.z = 96.;
+            map_data.gpu_chunk_data.y = 64.;
             map_data.optimize();
             map_data.serialize();
             map_data.make_buffers(&device);
@@ -271,7 +295,45 @@ impl State<'_> {
             cam_data,
         }
     }
-    fn compue_chunk(&self, map_id: usize) -> Result<(), Box<dyn std::error::Error>> {
+    fn compue_chunks(&self, map_ids: &[usize]) -> Result<(), Box<dyn std::error::Error>> {
+        let screen_bind_group = self.screen_data.get_bind_group(&self.device).unwrap();
+
+        let cam_bind_group = self.cam_data.get_bind_group(&self.device);
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: None,
+                timestamp_writes: None,
+            });
+            compute_pass.set_bind_group(0, Some(&screen_bind_group), &[]);
+            compute_pass.set_bind_group(2, Some(&cam_bind_group), &[]);
+
+            compute_pass.set_pipeline(&self.chunk_pipeline);
+
+            for id in map_ids {
+                let map_data = self.map_data.get(*id).unwrap();
+                let map_bind_group = map_data
+                    .get_bind_group(&self.device)
+                    .unwrap();
+                compute_pass.set_bind_group(1, Some(&map_bind_group), &[]);
+                compute_pass.dispatch_workgroups(
+                    self.screen_data.gpu_data.width,
+                    self.screen_data.gpu_data.heigth,
+                    1,
+                );
+            }
+        }
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        self.device.poll(wgpu::MaintainBase::Wait);
+
+        Ok(())
+    }
+
+    fn _compue_chunk(&self, map_id: usize) -> Result<(), Box<dyn std::error::Error>> {
         let screen_bind_group = self.screen_data.get_bind_group(&self.device).unwrap();
 
         let map_bind_group = self
@@ -394,11 +456,11 @@ impl ApplicationHandler for App<'_> {
 
                 let ln = self.state.as_ref().unwrap().map_data.len();
 
-                for i in 0..ln {
-                    let _ = self.state.as_mut().unwrap().compue_chunk(i);
-                }
+                let ids = (0..ln).collect::<Vec<_>>();
 
-                let _ = self.state.as_mut().unwrap().render();
+                let _ = self.state.as_ref().unwrap().compue_chunks(&ids);
+
+                let _ = self.state.as_ref().unwrap().render();
 
                 self.window.as_ref().unwrap().request_redraw();
             }
@@ -464,6 +526,7 @@ impl App<'_> {
             if self.input.is_key_pressed(KeyCode::KeyQ) {
                 state.cam_data.roll -= cam_speed;
             }
+
         }
     }
 }
