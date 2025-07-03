@@ -108,9 +108,6 @@ fn traverse_ray(
     c_pit: f32,
     max_dist: f32,
 ) -> ray_res {
-    var pos = vec3(start_pos.x, start_pos.y, start_pos.z);
-
-
     let fin_q = quaternion_multiply(
         quaternion_multiply(
             rotate_q_by_axis(-c_yaw, vec3f(0., 1., 0.)),
@@ -125,11 +122,18 @@ fn traverse_ray(
         ),
     );
 
+    let op1 = start_pos;
     let omov = rotate_point(vec3f(1., 0., 0.), fin_q);
+    let op2 = op1 + omov;
 
-    let mov = translate_ray(omov);
+    let p1 = translate_point(op1);
+    let p2 = translate_point(op2);
 
-    let e_c = enter_chunk(pos, mov, vec3f(map_data.x, map_data.y, map_data.z), map_data.size, max_dist);
+    var pos = p1;
+
+    let mov = p2 - p1;
+
+    let e_c = enter_chunk(p1, mov, map_data.size, max_dist);
 
     if e_c.can == 0 {
         return ray_res(2, 0., vec3f(0., 0., 0.));
@@ -139,7 +143,7 @@ fn traverse_ray(
 
     for (; ;) {
 
-        if distance(start_pos, pos) > max_dist {
+        if distance(p1, pos) > max_dist {
             break;
         }
 
@@ -150,7 +154,7 @@ fn traverse_ray(
         ));
 
         if d.fill == 0 {
-            let dist = distance(start_pos, pos);
+            let dist = distance(p1, pos);
             return ray_res(0, dist, vec3f(d.col.r, d.col.g, d.col.b));
         }
         if d.fill == 1 {
@@ -181,11 +185,11 @@ struct enterchunk {
     pos: vec3f
 }
 
-fn enter_chunk(start_pos: vec3f, mov: vec3f, chunk_pos: vec3f, chunk_size: f32, max_dist: f32) -> enterchunk {
+fn enter_chunk(start_pos: vec3f, mov: vec3f, chunk_size: f32, max_dist: f32) -> enterchunk {
 
-    if start_pos.x >= chunk_pos.x && start_pos.x < chunk_pos.x + chunk_size {
-        if start_pos.y >= chunk_pos.y && start_pos.y < chunk_pos.y + chunk_size {
-            if start_pos.z >= chunk_pos.z && start_pos.z < chunk_pos.z + chunk_size {
+    if start_pos.x >= 0. && start_pos.x < chunk_size {
+        if start_pos.y >= 0. && start_pos.y < chunk_size {
+            if start_pos.z >= 0. && start_pos.z < chunk_size {
                 return enterchunk(1, start_pos);
             }
         }
@@ -193,32 +197,32 @@ fn enter_chunk(start_pos: vec3f, mov: vec3f, chunk_pos: vec3f, chunk_size: f32, 
 
     var t = max_dist + 10.;
     if mov.x != 0 {
-        let d1 = (chunk_pos.x - start_pos.x + 0.001) / mov.x;
-        let d2 = (chunk_pos.x + chunk_size - start_pos.x - 0.001) / mov.x;
-        if is_area_fit(start_pos, mov, chunk_pos, chunk_size, d1) {
+        let d1 = (-start_pos.x + 0.001) / mov.x;
+        let d2 = (chunk_size - start_pos.x - 0.001) / mov.x;
+        if is_area_fit(start_pos, mov, chunk_size, d1) {
             t = min(t, d1);
         }
-        if is_area_fit(start_pos, mov, chunk_pos, chunk_size, d2) {
+        if is_area_fit(start_pos, mov, chunk_size, d2) {
             t = min(t, d2);
         }
     }
     if mov.y != 0 {
-        let d1 = (chunk_pos.y - start_pos.y + 0.001) / mov.y;
-        let d2 = (chunk_pos.y + chunk_size - start_pos.y - 0.001) / mov.y;
-        if is_area_fit(start_pos, mov, chunk_pos, chunk_size, d1) {
+        let d1 = (-start_pos.y + 0.001) / mov.y;
+        let d2 = (chunk_size - start_pos.y - 0.001) / mov.y;
+        if is_area_fit(start_pos, mov, chunk_size, d1) {
             t = min(t, d1);
         }
-        if is_area_fit(start_pos, mov, chunk_pos, chunk_size, d2) {
+        if is_area_fit(start_pos, mov, chunk_size, d2) {
             t = min(t, d2);
         }
     }
     if mov.z != 0 {
-        let d1 = (chunk_pos.z - start_pos.z + 0.001) / mov.z;
-        let d2 = (chunk_pos.z + chunk_size - start_pos.z - 0.001) / mov.z;
-        if is_area_fit(start_pos, mov, chunk_pos, chunk_size, d1) {
+        let d1 = (-start_pos.z + 0.001) / mov.z;
+        let d2 = (chunk_size - start_pos.z - 0.001) / mov.z;
+        if is_area_fit(start_pos, mov, chunk_size, d1) {
             t = min(t, d1);
         }
-        if is_area_fit(start_pos, mov, chunk_pos, chunk_size, d2) {
+        if is_area_fit(start_pos, mov, chunk_size, d2) {
             t = min(t, d2);
         }
     }
@@ -234,14 +238,14 @@ fn enter_chunk(start_pos: vec3f, mov: vec3f, chunk_pos: vec3f, chunk_size: f32, 
     return enterchunk(1, npos);
 }
 
-fn is_area_fit(start_pos: vec3f, mov: vec3f, chunk_pos: vec3f, chunk_size: f32, d: f32) -> bool {
+fn is_area_fit(start_pos: vec3f, mov: vec3f, chunk_size: f32, d: f32) -> bool {
     if d >= 0. {
         let px = start_pos.x + (mov.x * d);
         let py = start_pos.y + (mov.y * d);
         let pz = start_pos.z + (mov.z * d);
-        if px >= chunk_pos.x && px <= chunk_pos.x + chunk_size {
-            if py >= chunk_pos.y && py <= chunk_pos.y + chunk_size {
-                if pz >= chunk_pos.z && pz <= chunk_pos.z + chunk_size {
+        if px >= 0. && px <= chunk_size {
+            if py >= 0. && py <= chunk_size {
+                if pz >= 0. && pz <= chunk_size {
                     return true;
                 }
             }
@@ -288,13 +292,13 @@ fn cross_area(pos: vec3<f32>, mov: vec3<f32>, b1: vec3<f32>, b2: vec3<f32>) -> v
 }
 
 fn is_node_filled(tar_pos: vec3f) -> node_fill_return {
-    if tar_pos.x < map_data.x || tar_pos.x > map_data.x + map_data.size {
+    if tar_pos.x < 0. || tar_pos.x > map_data.size {
         return return_err(1);
     }
-    if tar_pos.y < map_data.y || tar_pos.y > map_data.y + map_data.size {
+    if tar_pos.y < 0. || tar_pos.y > map_data.size {
         return return_err(1);
     }
-    if tar_pos.z < map_data.z || tar_pos.z > map_data.z + map_data.size {
+    if tar_pos.z < 0. || tar_pos.z > map_data.size {
         return return_err(1);
     }
 
@@ -303,31 +307,31 @@ fn is_node_filled(tar_pos: vec3f) -> node_fill_return {
     var c_pos = vec3f(0., 0., 0.);
     loop {
         if cur_tile.filled == 1 {
-            return return_fill(0, vec3(c_pos.x + map_data.x, c_pos.y + map_data.y, c_pos.z + map_data.z), vec3f(cur_tile.vr, cur_tile.vg, cur_tile.vb), w);
+            return return_fill(0, vec3(c_pos.x, c_pos.y, c_pos.z), vec3f(cur_tile.vr, cur_tile.vg, cur_tile.vb), w);
         }
         let nw = w / 2.;
 
         var id_x = 1;
-        if tar_pos.x < c_pos.x + map_data.x + nw {
+        if tar_pos.x < c_pos.x + nw {
             id_x = 0;
         }
 
         var id_y = 1;
-        if tar_pos.y < c_pos.y + map_data.y + nw {
+        if tar_pos.y < c_pos.y + nw {
             id_y = 0;
         }
 
         var id_z = 1;
-        if tar_pos.z < c_pos.z + map_data.z + nw {
+        if tar_pos.z < c_pos.z + nw {
             id_z = 0;
         }
 
         let id = id_z * 4 + id_y * 2 + id_x;
 
         if cur_tile.children[id] == 0 {
-            let nx = c_pos.x + (nw * f32(id_x)) + map_data.x;
-            let ny = c_pos.y + (nw * f32(id_y)) + map_data.y;
-            let nz = c_pos.z + (nw * f32(id_z)) + map_data.z;
+            let nx = c_pos.x + (nw * f32(id_x));
+            let ny = c_pos.y + (nw * f32(id_y));
+            let nz = c_pos.z + (nw * f32(id_z));
             return return_area(vec3(nx, ny, nz), nw);
         }
 
@@ -401,6 +405,36 @@ fn distance(a: vec3<f32>, b: vec3<f32>) -> f32 {
     return sqrt(pow(a.x - b.x, 2.) + pow(a.y - b.y, 2.) + pow(a.z - b.z, 2.));
 }
 
-fn translate_ray(mov: vec3f) -> vec3f {
-    return mov;
+fn translate_point(pos: vec3f) -> vec3f {
+    let mat_pit = mat4x4(
+        cos(map_data.yaw), 0., -sin(map_data.yaw), 0.,
+        0., 1., 0., 0.,
+        sin(map_data.yaw), 0., cos(map_data.yaw), 0.,
+        0., 0., 0., 1.,
+    );
+    let mat_yaw = mat4x4(
+        cos(map_data.pitch), -sin(map_data.pitch), 0., 0.,
+        sin(map_data.pitch), cos(map_data.pitch), 0., 0.,
+        0., 0., 1., 0,
+        0., 0., 0., 1.,
+    );
+    let mat_rot = mat_pit * mat_yaw;
+    let mat_pos_0 = mat4x4f(
+        1., 0., 0., map_data.size/2.,
+        0., 1., 0., map_data.size/2.,
+        0., 0., 1., map_data.size/2.,
+        0., 0., 0., 1.,
+    );
+    let mat_pos = mat4x4f(
+        1., 0., 0., -map_data.x,
+        0., 1., 0., -map_data.y,
+        0., 0., 1., -map_data.z,
+        0., 0., 0., 1.,
+    );
+    let mat_rot_2 = mat_rot * mat_pos_0;
+    let mat_trans = mat_pos * mat_rot_2;
+
+    let npos = vec4f(pos.x, pos.y, pos.z, 1.) * mat_trans;
+
+    return vec3f(npos.x, npos.y, npos.z);
 }

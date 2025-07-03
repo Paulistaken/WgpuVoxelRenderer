@@ -125,15 +125,14 @@ impl State<'_> {
             .await
             .unwrap();
 
-        let mut cam_data = cam::GpuCamData::new(size);
-        cam_data.pos[1] = 64.;
-        cam_data.pos[2] = 64.;
+        let cam_data = cam::GpuCamData::new(size);
         let mut screen_data = screen::ScreenData::new(vir_size.0, vir_size.1);
         screen_data.set_buffers(&device);
         let mut chunks = vec![];
         {
             let mut map_data = map::ChunkData::new(6);
             let _ = load_model(&mut map_data, "./assets/models/tree2.vox");
+            let _ = map_data.insert_value((0., 0., 0.), 2, [1., 1., 1.]);
             map_data.gpu_chunk_data.x = 128.;
             map_data.gpu_chunk_data.z = 96.;
             map_data.gpu_chunk_data.y = 32.;
@@ -143,9 +142,10 @@ impl State<'_> {
             chunks.push(map_data);
         }
         {
-            let mut map_data = map::ChunkData::new(7);
+            let mut map_data = map::ChunkData::new(5);
             let _ = load_model(&mut map_data, "./assets/models/cact1.vox");
             let _ = load_model(&mut map_data, "./assets/models/cact2.vox");
+            let _ = map_data.insert_value((0., 0., 0.), 2, [1., 1., 1.]);
             map_data.gpu_chunk_data.x = 128.;
             map_data.gpu_chunk_data.z = 256.;
             map_data.gpu_chunk_data.y = 32.;
@@ -154,6 +154,22 @@ impl State<'_> {
             map_data.make_buffers(&device);
             chunks.push(map_data);
         }
+        {
+            let mut map_data = map::ChunkData::new(5);
+            let _ = load_model(&mut map_data, "./assets/models/cact1.vox");
+            let _ = load_model(&mut map_data, "./assets/models/cact2.vox");
+            let _ = map_data.insert_value((0., 0., 0.), 2, [1., 1., 1.]);
+            map_data.gpu_chunk_data.x = 128.;
+            map_data.gpu_chunk_data.z = 256.;
+            map_data.gpu_chunk_data.y = 32.;
+            map_data.gpu_chunk_data.yaw = f32::consts::PI / 2.;
+            map_data.optimize();
+            map_data.serialize();
+            map_data.make_buffers(&device);
+            chunks.push(map_data);
+        }
+
+
 
         for i in 0..3 {
             let mut map_data = map::ChunkData::new(8);
@@ -494,12 +510,16 @@ impl ApplicationHandler for App<'_> {
                 self.player_input();
 
                 if let Some(state) = self.state.as_mut() {
-                    state.chunks_data.first_mut().unwrap().gpu_chunk_data.yaw += 0.01;
+                    state.chunks_data.first_mut().unwrap().gpu_chunk_data.yaw += 0.02;
+                    state.chunks_data.get_mut(1).unwrap().gpu_chunk_data.pitch += 0.02;
+                    state.chunks_data.get_mut(2).unwrap().gpu_chunk_data.pitch += 0.02;
                     state
                         .chunks_data
                         .first_mut()
                         .unwrap()
                         .make_buffers(&state.device);
+                    state.chunks_data.get_mut(1).unwrap().make_buffers(&state.device);
+                    state.chunks_data.get_mut(2).unwrap().make_buffers(&state.device);
                 }
 
                 let ln = self.state.as_ref().unwrap().chunks_data.len();
