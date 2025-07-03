@@ -9,9 +9,6 @@ pub struct GpuTileData {
     vg: f32,
     vb: f32,
     pub children: [u32; 8],
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
     pub d: i32,
 }
 
@@ -36,6 +33,9 @@ pub struct GpuChunkData {
     pub x: f32,
     pub y: f32,
     pub z: f32,
+    pub yaw: f32,
+    pub pitch: f32,
+    pub roll: f32,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -107,9 +107,6 @@ impl CpuTileData {
             vg: self.vg,
             vb: self.vb,
             children: indexes,
-            x: self.x,
-            y: self.y,
-            z: self.z,
             d: self.d,
         };
         index
@@ -124,6 +121,7 @@ impl ChunkData {
                 x: 0.,
                 y: 0.,
                 z: 0.,
+                ..Default::default()
             },
             gpu_data: Vec::new(),
             cpu_data: Box::new(CpuTileData {

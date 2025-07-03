@@ -1,3 +1,4 @@
+use std::f32;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -22,11 +23,12 @@ struct State<'a> {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
-    clean_pipeline: wgpu::RenderPipeline,
     voxel_render_pipeline: wgpu::RenderPipeline,
+    voxel_render_compute_clear_pipeline: wgpu::ComputePipeline,
+    voxel_render_compute_clean_pipeline: wgpu::ComputePipeline,
     chunk_pipeline: wgpu::ComputePipeline,
     screen_data: screen::ScreenData,
-    map_data: Vec<map::ChunkData>,
+    chunks_data: Vec<map::ChunkData>,
     cam_data: cam::GpuCamData,
 }
 
@@ -44,37 +46,23 @@ struct App<'a> {
     _egui: Option<_EguiState>,
 }
 
-fn gen_spiral(map: &mut map::ChunkData, mut pos: (f32, f32, f32), in_dp: i32, max_dp: i32) {
-    let mut st = 0;
-    let mut dp = in_dp;
-    while dp >= max_dp {
-        let sz = 2_f32.powi(dp);
-        let _ = map.insert_value(
-            pos,
-            dp,
-            [
-                random_range(0. ..1.),
-                random_range(0. ..1.),
-                random_range(0. ..1.),
-            ],
-        );
-        match st {
-            0 => {
-                pos.0 += sz;
-                st = 1
-            }
-            1 => {
-                pos.1 += sz;
-                st = 2
-            }
-            _ => {
-                pos.2 += sz;
-                st = 0
-            }
+fn load_model(map: &mut map::ChunkData, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let vox_data = dot_vox::load(path)?;
+    for model in vox_data.models.iter() {
+        for voxel in model.voxels.iter() {
+            let pos = (voxel.x as f32, voxel.z as f32, voxel.y as f32);
+            let color = vox_data.palette.get(voxel.i as usize).unwrap();
+            let color = [
+                color.r as f32 / 255.,
+                color.g as f32 / 255.,
+                color.b as f32 / 255.,
+            ];
+            let _ = map.insert_value(pos, 1, color);
         }
-        dp -= 1;
     }
+    Ok(())
 }
+
 fn gen_sphere(map: &mut map::ChunkData, middle: (f32, f32, f32), sz: f32, dp: i32) {
     let sz = sz / 2.;
     let szt = 2_f32.powi(dp);
@@ -143,31 +131,66 @@ impl State<'_> {
         let mut screen_data = screen::ScreenData::new(vir_size.0, vir_size.1);
         screen_data.set_buffers(&device);
         let mut chunks = vec![];
-        for i in 0..10 {
-            let mut map_data = map::ChunkData::new(8);
-            gen_sphere(&mut map_data, (64., 64., 64.), 60., random_range(-3..4));
-            map_data.gpu_chunk_data.x = 128. * (i as f32);
+        {
+            let mut map_data = map::ChunkData::new(6);
+            let _ = load_model(&mut map_data, "./assets/models/tree2.vox");
+            map_data.gpu_chunk_data.x = 128.;
+            map_data.gpu_chunk_data.z = 96.;
+            map_data.gpu_chunk_data.y = 32.;
             map_data.optimize();
             map_data.serialize();
             map_data.make_buffers(&device);
             chunks.push(map_data);
         }
-        for i in 0..5 {
+        {
+            let mut map_data = map::ChunkData::new(7);
+            let _ = load_model(&mut map_data, "./assets/models/cact1.vox");
+            let _ = load_model(&mut map_data, "./assets/models/cact2.vox");
+            map_data.gpu_chunk_data.x = 128.;
+            map_data.gpu_chunk_data.z = 256.;
+            map_data.gpu_chunk_data.y = 32.;
+            map_data.optimize();
+            map_data.serialize();
+            map_data.make_buffers(&device);
+            chunks.push(map_data);
+        }
+
+        for i in 0..3 {
+            let mut map_data = map::ChunkData::new(8);
+            gen_sphere(&mut map_data, (64., 64., 64.), 60., random_range(-3..4));
+            map_data.gpu_chunk_data.x = 128. + 128. * (i as f32);
+            map_data.optimize();
+            map_data.serialize();
+            map_data.make_buffers(&device);
+            chunks.push(map_data);
+        }
+        for i in 0..3 {
             let mut map_data = map::ChunkData::new(7);
             gen_sphere(&mut map_data, (32., 32., 32.), 30., random_range(-4..2));
-            map_data.gpu_chunk_data.x = 64. * (i as f32);
+            map_data.gpu_chunk_data.x = 128. + 64. * (i as f32);
             map_data.gpu_chunk_data.z = 128.;
             map_data.optimize();
             map_data.serialize();
             map_data.make_buffers(&device);
             chunks.push(map_data);
         }
-        for i in 0..7 {
-            let mut map_data = map::ChunkData::new(7);
-            gen_sphere(&mut map_data, (32., 32., 32.), 30., random_range(-4..2));
-            map_data.gpu_chunk_data.x = 64. * (i as f32);
+        for i in 0..3 {
+            let mut map_data = map::ChunkData::new(8);
+            gen_sphere(&mut map_data, (32., 32., 32.), 39., random_range(-4..2));
+            map_data.gpu_chunk_data.x = 128. + 64. * (i as f32);
             map_data.gpu_chunk_data.z = 96.;
             map_data.gpu_chunk_data.y = 64.;
+            map_data.optimize();
+            map_data.serialize();
+            map_data.make_buffers(&device);
+            chunks.push(map_data);
+        }
+        for i in 0..10 {
+            let mut map_data = map::ChunkData::new(6);
+            let _ = load_model(&mut map_data, "./assets/models/tree2.vox");
+            map_data.gpu_chunk_data.z = 48. * (i as f32) + random_range(-16. ..=16.);
+            map_data.gpu_chunk_data.x = random_range(-32. ..=32.);
+            map_data.gpu_chunk_data.y = random_range(-4. ..=4.);
             map_data.optimize();
             map_data.serialize();
             map_data.make_buffers(&device);
@@ -244,30 +267,22 @@ impl State<'_> {
             multiview: None,
             cache: None,
         });
-        let render_pipeline_clear =
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: None,
+        let render_pipeline_clean =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("Clean Screen Pipeline"),
                 layout: Some(&render_pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &render_shader,
-                    entry_point: Some("vs_main"),
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                    buffers: &[],
-                },
-                primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState::default(),
-                fragment: Some(wgpu::FragmentState {
-                    module: &render_shader,
-                    entry_point: Some("fs_clear"),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: config.format,
-                        blend: Some(wgpu::BlendState::REPLACE),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                }),
-                multiview: None,
+                module: &render_shader,
+                entry_point: Some("clean_screen"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            });
+        let render_pipeline_reset =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("Reset Screen Pipeline"),
+                layout: Some(&render_pipeline_layout),
+                module: &render_shader,
+                entry_point: Some("reset_screen"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 cache: None,
             });
 
@@ -287,11 +302,12 @@ impl State<'_> {
             surface,
             device,
             queue,
-            clean_pipeline: render_pipeline_clear,
+            voxel_render_compute_clean_pipeline: render_pipeline_clean,
+            voxel_render_compute_clear_pipeline: render_pipeline_reset,
             voxel_render_pipeline: render_pipeline,
             chunk_pipeline: compute_pipeline,
             screen_data,
-            map_data: chunks,
+            chunks_data: chunks,
             cam_data,
         }
     }
@@ -314,10 +330,8 @@ impl State<'_> {
             compute_pass.set_pipeline(&self.chunk_pipeline);
 
             for id in map_ids {
-                let map_data = self.map_data.get(*id).unwrap();
-                let map_bind_group = map_data
-                    .get_bind_group(&self.device)
-                    .unwrap();
+                let map_data = self.chunks_data.get(*id).unwrap();
+                let map_bind_group = map_data.get_bind_group(&self.device).unwrap();
                 compute_pass.set_bind_group(1, Some(&map_bind_group), &[]);
                 compute_pass.dispatch_workgroups(
                     self.screen_data.gpu_data.width,
@@ -337,7 +351,7 @@ impl State<'_> {
         let screen_bind_group = self.screen_data.get_bind_group(&self.device).unwrap();
 
         let map_bind_group = self
-            .map_data
+            .chunks_data
             .get(map_id)
             .unwrap()
             .get_bind_group(&self.device)
@@ -384,6 +398,20 @@ impl State<'_> {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
 
         {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: None,
+                timestamp_writes: None,
+            });
+            compute_pass.set_bind_group(0, Some(&screen_bind_group), &[]);
+            compute_pass.set_pipeline(&self.voxel_render_compute_clean_pipeline);
+            compute_pass.dispatch_workgroups(
+                self.screen_data.gpu_data.width,
+                self.screen_data.gpu_data.heigth,
+                1,
+            );
+        }
+
+        {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -406,12 +434,23 @@ impl State<'_> {
 
             render_pass.set_bind_group(0, Some(&screen_bind_group), &[]);
 
-            render_pass.set_pipeline(&self.clean_pipeline);
-            render_pass.draw(0..6, 0..1);
-
             render_pass.set_pipeline(&self.voxel_render_pipeline);
             render_pass.draw(0..6, 0..1);
         }
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: None,
+                timestamp_writes: None,
+            });
+            compute_pass.set_bind_group(0, Some(&screen_bind_group), &[]);
+            compute_pass.set_pipeline(&self.voxel_render_compute_clear_pipeline);
+            compute_pass.dispatch_workgroups(
+                self.screen_data.gpu_data.width,
+                self.screen_data.gpu_data.heigth,
+                1,
+            );
+        }
+
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
         let _ = self.device.poll(wgpu::MaintainBase::Wait);
@@ -454,7 +493,16 @@ impl ApplicationHandler for App<'_> {
                 self.delta_time = dur / 0.16;
                 self.player_input();
 
-                let ln = self.state.as_ref().unwrap().map_data.len();
+                if let Some(state) = self.state.as_mut() {
+                    state.chunks_data.first_mut().unwrap().gpu_chunk_data.yaw += 0.01;
+                    state
+                        .chunks_data
+                        .first_mut()
+                        .unwrap()
+                        .make_buffers(&state.device);
+                }
+
+                let ln = self.state.as_ref().unwrap().chunks_data.len();
 
                 let ids = (0..ln).collect::<Vec<_>>();
 
@@ -478,6 +526,47 @@ impl ApplicationHandler for App<'_> {
 impl App<'_> {
     fn player_input(&mut self) {
         if let Some(state) = self.state.as_mut() {
+            if self.input.is_key_pressed(KeyCode::KeyP) {
+                let rot_q1 =
+                    quaternion::axis_angle([0., 0., 1.], state.cam_data.pitch.to_radians());
+                let rot_q2 = quaternion::axis_angle([0., 1., 0.], -state.cam_data.yaw.to_radians());
+                let rot_q = quaternion::mul(rot_q2, rot_q1);
+                let pos = quaternion::rotate_vector(rot_q, [9., 0., 0.]);
+                let npos = (
+                    state.cam_data.pos[0] + pos[0],
+                    state.cam_data.pos[1] + pos[1],
+                    state.cam_data.pos[2] + pos[2],
+                );
+                for chunk in state.chunks_data.iter_mut() {
+                    if npos.0 < chunk.gpu_chunk_data.x
+                        || npos.0 >= chunk.gpu_chunk_data.x + chunk.gpu_chunk_data.size
+                    {
+                        continue;
+                    }
+                    if npos.1 < chunk.gpu_chunk_data.y
+                        || npos.1 >= chunk.gpu_chunk_data.y + chunk.gpu_chunk_data.size
+                    {
+                        continue;
+                    }
+                    if npos.2 < chunk.gpu_chunk_data.z
+                        || npos.2 >= chunk.gpu_chunk_data.z + chunk.gpu_chunk_data.size
+                    {
+                        continue;
+                    }
+                    let _ = chunk.insert_value(
+                        (
+                            npos.0 - chunk.gpu_chunk_data.x,
+                            npos.1 - chunk.gpu_chunk_data.y,
+                            npos.2 - chunk.gpu_chunk_data.z,
+                        ),
+                        1,
+                        [1., 1., 1.],
+                    );
+                    chunk.serialize();
+                    chunk.make_buffers(&state.device);
+                    break;
+                }
+            }
             let speed = 5. * self.delta_time;
             let cam_speed = 9. * self.delta_time;
 
@@ -526,7 +615,6 @@ impl App<'_> {
             if self.input.is_key_pressed(KeyCode::KeyQ) {
                 state.cam_data.roll -= cam_speed;
             }
-
         }
     }
 }

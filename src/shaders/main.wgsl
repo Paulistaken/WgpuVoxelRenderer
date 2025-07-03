@@ -23,12 +23,15 @@ struct Quaternion {
     w: f32,
 }
 
-struct MapData {
+struct ChunkData {
     deph: i32,
     size: f32,
     x: f32,
     y: f32,
     z: f32,
+    yaw: f32,
+    pitch: f32,
+    roll: f32,
 }
 struct TileData {
     filled: u32,
@@ -36,9 +39,6 @@ struct TileData {
     vg: f32,
     vb: f32,
     children: array<u32,8>,
-    x: f32,
-    y: f32,
-    z: f32,
     d: i32,
 }
 
@@ -55,7 +55,7 @@ struct node_fill_return {
 @group(0) @binding(1) var<storage, read_write> pixel_data: array<PixelData>;
    
 
-@group(1) @binding(0) var<storage, read> map_data : MapData;
+@group(1) @binding(0) var<storage, read> map_data : ChunkData;
 @group(1) @binding(1) var<storage, read> tiles : array<TileData>;
 
 @group(2) @binding(0) var<storage, read> cam_data : CamData;
@@ -125,7 +125,9 @@ fn traverse_ray(
         ),
     );
 
-    let mov = rotate_point(vec3f(1., 0., 0.), fin_q);
+    let omov = rotate_point(vec3f(1., 0., 0.), fin_q);
+
+    let mov = translate_ray(omov);
 
     let e_c = enter_chunk(pos, mov, vec3f(map_data.x, map_data.y, map_data.z), map_data.size, max_dist);
 
@@ -190,60 +192,34 @@ fn enter_chunk(start_pos: vec3f, mov: vec3f, chunk_pos: vec3f, chunk_size: f32, 
     }
 
     var t = max_dist + 10.;
-    var d = 0.;
-
-    if mov.x != 0. {
-        d = (chunk_pos.x - start_pos.x) / mov.x;
-        if d > 0. {
-            if mov.x > 0.{
-                t = min(t, d + 0.1);
-            }else{
-                t = min(t, d - 0.1);
-            }
+    if mov.x != 0 {
+        let d1 = (chunk_pos.x - start_pos.x + 0.001) / mov.x;
+        let d2 = (chunk_pos.x + chunk_size - start_pos.x - 0.001) / mov.x;
+        if is_area_fit(start_pos, mov, chunk_pos, chunk_size, d1) {
+            t = min(t, d1);
         }
-        d = (chunk_pos.x + chunk_size - start_pos.x) / mov.x;
-        if d > 0. {
-            if mov.x > 0.{
-                t = min(t, d - 0.1);
-            }else{
-                t = min(t, d + 0.1);
-            }
+        if is_area_fit(start_pos, mov, chunk_pos, chunk_size, d2) {
+            t = min(t, d2);
         }
     }
-    if mov.y != 0. {
-        d = (chunk_pos.y - start_pos.y) / mov.y;
-        if d > 0. {
-            if mov.y > 0.{
-                t = min(t, d + 0.1);
-            }else{
-                t = min(t, d - 0.1);
-            }
+    if mov.y != 0 {
+        let d1 = (chunk_pos.y - start_pos.y + 0.001) / mov.y;
+        let d2 = (chunk_pos.y + chunk_size - start_pos.y - 0.001) / mov.y;
+        if is_area_fit(start_pos, mov, chunk_pos, chunk_size, d1) {
+            t = min(t, d1);
         }
-        d = (chunk_pos.y + chunk_size - start_pos.y) / mov.y;
-        if d > 0. {
-            if mov.y > 0.{
-                t = min(t, d - 0.1);
-            }else{
-                t = min(t, d + 0.1);
-            }
+        if is_area_fit(start_pos, mov, chunk_pos, chunk_size, d2) {
+            t = min(t, d2);
         }
     }
-    if mov.z != 0. {
-        d = (chunk_pos.z - start_pos.z) / mov.z;
-        if d > 0. {
-            if mov.z > 0.{
-                t = min(t, d + 0.1);
-            }else{
-                t = min(t, d - 0.1);
-            }
+    if mov.z != 0 {
+        let d1 = (chunk_pos.z - start_pos.z + 0.001) / mov.z;
+        let d2 = (chunk_pos.z + chunk_size - start_pos.z - 0.001) / mov.z;
+        if is_area_fit(start_pos, mov, chunk_pos, chunk_size, d1) {
+            t = min(t, d1);
         }
-        d = (chunk_pos.z + chunk_size - start_pos.z) / mov.z;
-        if d > 0. {
-            if mov.z > 0.{
-                t = min(t, d - 0.1);
-            }else{
-                t = min(t, d + 0.1);
-            }
+        if is_area_fit(start_pos, mov, chunk_pos, chunk_size, d2) {
+            t = min(t, d2);
         }
     }
 
@@ -251,8 +227,27 @@ fn enter_chunk(start_pos: vec3f, mov: vec3f, chunk_pos: vec3f, chunk_size: f32, 
         return enterchunk(0, vec3f(0., 0., 0.));
     }
 
-    let npos = start_pos + mov * t;
+    let nmov = vec3f(mov.x * t, mov.y * t, mov.z * t);
+
+    let npos = start_pos + nmov;
+
     return enterchunk(1, npos);
+}
+
+fn is_area_fit(start_pos: vec3f, mov: vec3f, chunk_pos: vec3f, chunk_size: f32, d: f32) -> bool {
+    if d >= 0. {
+        let px = start_pos.x + (mov.x * d);
+        let py = start_pos.y + (mov.y * d);
+        let pz = start_pos.z + (mov.z * d);
+        if px >= chunk_pos.x && px <= chunk_pos.x + chunk_size {
+            if py >= chunk_pos.y && py <= chunk_pos.y + chunk_size {
+                if pz >= chunk_pos.z && pz <= chunk_pos.z + chunk_size {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
 }
 
 fn cross_area(pos: vec3<f32>, mov: vec3<f32>, b1: vec3<f32>, b2: vec3<f32>) -> vec3<f32> {
@@ -305,39 +300,43 @@ fn is_node_filled(tar_pos: vec3f) -> node_fill_return {
 
     var cur_tile = tiles[0];
     var w = pow(2., f32(cur_tile.d));
+    var c_pos = vec3f(0., 0., 0.);
     loop {
         if cur_tile.filled == 1 {
-            return return_fill(0, vec3(cur_tile.x + map_data.x, cur_tile.y + map_data.y, cur_tile.z + map_data.z), vec3f(cur_tile.vr, cur_tile.vg, cur_tile.vb), w);
+            return return_fill(0, vec3(c_pos.x + map_data.x, c_pos.y + map_data.y, c_pos.z + map_data.z), vec3f(cur_tile.vr, cur_tile.vg, cur_tile.vb), w);
         }
         let nw = w / 2.;
 
         var id_x = 1;
-        if tar_pos.x < cur_tile.x + map_data.x + nw {
+        if tar_pos.x < c_pos.x + map_data.x + nw {
             id_x = 0;
         }
 
         var id_y = 1;
-        if tar_pos.y < cur_tile.y + map_data.y + nw {
+        if tar_pos.y < c_pos.y + map_data.y + nw {
             id_y = 0;
         }
 
         var id_z = 1;
-        if tar_pos.z < cur_tile.z + map_data.z + nw {
+        if tar_pos.z < c_pos.z + map_data.z + nw {
             id_z = 0;
         }
 
         let id = id_z * 4 + id_y * 2 + id_x;
 
         if cur_tile.children[id] == 0 {
-            let nx = cur_tile.x + (nw * f32(id_x)) + map_data.x;
-            let ny = cur_tile.y + (nw * f32(id_y)) + map_data.y;
-            let nz = cur_tile.z + (nw * f32(id_z)) + map_data.z;
+            let nx = c_pos.x + (nw * f32(id_x)) + map_data.x;
+            let ny = c_pos.y + (nw * f32(id_y)) + map_data.y;
+            let nz = c_pos.z + (nw * f32(id_z)) + map_data.z;
             return return_area(vec3(nx, ny, nz), nw);
         }
 
         cur_tile = tiles[cur_tile.children[id]];
 
         w /= 2.;
+        c_pos.x += (nw * f32(id_x));
+        c_pos.y += (nw * f32(id_y));
+        c_pos.z += (nw * f32(id_z));
     }
     return return_err(2);
 }
@@ -400,4 +399,8 @@ fn get_angle_pitch(id_y: u32) -> f32 {
 
 fn distance(a: vec3<f32>, b: vec3<f32>) -> f32 {
     return sqrt(pow(a.x - b.x, 2.) + pow(a.y - b.y, 2.) + pow(a.z - b.z, 2.));
+}
+
+fn translate_ray(mov: vec3f) -> vec3f {
+    return mov;
 }
