@@ -66,6 +66,7 @@ fn load_model(map: &mut map::ChunkData, path: &str) -> Result<(), Box<dyn std::e
 fn gen_sphere(map: &mut map::ChunkData, middle: (f32, f32, f32), sz: f32, dp: i32) {
     let sz = sz / 2.;
     let szt = 2_f32.powi(dp);
+
     let range_x = ((middle.0 - sz) / szt) as u32..((middle.0 + sz) / szt) as u32;
     let range_y = ((middle.1 - sz) / szt) as u32..((middle.1 + sz) / szt) as u32;
     let range_z = ((middle.2 - sz) / szt) as u32..((middle.2 + sz) / szt) as u32;
@@ -172,7 +173,7 @@ impl State<'_> {
 
 
         for i in 0..3 {
-            let mut map_data = map::ChunkData::new(8);
+            let mut map_data = map::ChunkData::new(7);
             gen_sphere(&mut map_data, (64., 64., 64.), 60., random_range(-3..4));
             map_data.gpu_chunk_data.x = 128. + 128. * (i as f32);
             map_data.optimize();
@@ -181,7 +182,7 @@ impl State<'_> {
             chunks.push(map_data);
         }
         for i in 0..3 {
-            let mut map_data = map::ChunkData::new(7);
+            let mut map_data = map::ChunkData::new(6);
             gen_sphere(&mut map_data, (32., 32., 32.), 30., random_range(-4..2));
             map_data.gpu_chunk_data.x = 128. + 64. * (i as f32);
             map_data.gpu_chunk_data.z = 128.;
@@ -191,7 +192,7 @@ impl State<'_> {
             chunks.push(map_data);
         }
         for i in 0..3 {
-            let mut map_data = map::ChunkData::new(8);
+            let mut map_data = map::ChunkData::new(6);
             gen_sphere(&mut map_data, (32., 32., 32.), 39., random_range(-4..2));
             map_data.gpu_chunk_data.x = 128. + 64. * (i as f32);
             map_data.gpu_chunk_data.z = 96.;
@@ -513,6 +514,9 @@ impl ApplicationHandler for App<'_> {
                     state.chunks_data.first_mut().unwrap().gpu_chunk_data.yaw += 0.02;
                     state.chunks_data.get_mut(1).unwrap().gpu_chunk_data.pitch += 0.02;
                     state.chunks_data.get_mut(2).unwrap().gpu_chunk_data.pitch += 0.02;
+                    state.chunks_data.get_mut(3).unwrap().gpu_chunk_data.yaw += 0.02;
+                    state.chunks_data.get_mut(3).unwrap().gpu_chunk_data.pitch += 0.01;
+                    state.chunks_data.get_mut(3).unwrap().gpu_chunk_data.roll += 0.005;
                     state
                         .chunks_data
                         .first_mut()
@@ -520,6 +524,7 @@ impl ApplicationHandler for App<'_> {
                         .make_buffers(&state.device);
                     state.chunks_data.get_mut(1).unwrap().make_buffers(&state.device);
                     state.chunks_data.get_mut(2).unwrap().make_buffers(&state.device);
+                    state.chunks_data.get_mut(3).unwrap().make_buffers(&state.device);
                 }
 
                 let ln = self.state.as_ref().unwrap().chunks_data.len();

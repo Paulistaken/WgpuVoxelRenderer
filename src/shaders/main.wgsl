@@ -406,6 +406,13 @@ fn distance(a: vec3<f32>, b: vec3<f32>) -> f32 {
 }
 
 fn translate_point(pos: vec3f) -> vec3f {
+    let mat_rol = mat4x4(
+        1., 0., 0., 0.,
+        0., cos(map_data.roll), sin(map_data.roll), 0.,
+        0., -sin(map_data.roll), cos(map_data.roll), 0.,
+        0., 0., 0., 1.,
+    );
+
     let mat_pit = mat4x4(
         cos(map_data.yaw), 0., -sin(map_data.yaw), 0.,
         0., 1., 0., 0.,
@@ -418,7 +425,7 @@ fn translate_point(pos: vec3f) -> vec3f {
         0., 0., 1., 0,
         0., 0., 0., 1.,
     );
-    let mat_rot = mat_pit * mat_yaw;
+    let mat_rot = mat_rol * mat_pit * mat_yaw;
     let mat_pos_0 = mat4x4f(
         1., 0., 0., map_data.size/2.,
         0., 1., 0., map_data.size/2.,
