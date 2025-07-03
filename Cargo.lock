@@ -287,12 +287,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "byteorder"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
-
-[[package]]
 name = "byteorder-lite"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2469,17 +2463,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
-name = "vox-format"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b41c07d4bfb99286592fe2fbe25022360a305e5c800e1bc93d9db280c24db1aa"
-dependencies = [
- "byteorder",
- "log",
- "thiserror 1.0.69",
-]
-
-[[package]]
 name = "voxelgpu"
 version = "0.1.0"
 dependencies = [
@@ -2493,7 +2476,6 @@ dependencies = [
  "quaternion",
  "rand",
  "tokio",
- "vox-format",
  "wgpu",
  "winit",
 ]
