@@ -30,12 +30,14 @@ pub struct CpuTileData {
 pub struct GpuChunkData {
     pub max_d: i32,
     pub size: f32,
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-    pub yaw: f32,
-    pub pitch: f32,
-    pub roll: f32,
+    __filla : f32,
+    __fillb : f32,
+    pub pos : [f32; 3],
+    __fill1 : f32,
+    pub rot : [f32; 3],
+    __fill2 : f32,
+    pub orgin : [f32; 3],
+    __fill3 : f32,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -43,23 +45,44 @@ pub struct ChunkData {
     pub gpu_chunk_data: GpuChunkData,
     cpu_data: Box<CpuTileData>,
     gpu_data: Vec<GpuTileData>,
-    gpu_mapdata_buffer: Option<wgpu::Buffer>,
     gpu_data_buffer: Option<wgpu::Buffer>,
 }
 impl CpuTileData {
-    fn optimize(&mut self) {
+    fn optimize(&mut self, min_rez : Option<i32>) {
         if self.filled {
             self.children.iter_mut().for_each(|c| {
                 *c = None;
             });
             return;
         }
-
         for c in self.children.iter_mut() {
             if let Some(c) = c.as_mut() {
-                c.optimize();
+                c.optimize(min_rez);
             }
         }
+        if min_rez.is_some_and(|r| self.d <= r){
+            let mut n = 0;
+            let mut nclr = [0_f32; 3];
+            for c in self.children.iter(){
+                if let Some(c) = c.as_ref(){
+                    if c.filled{
+                        n += 1;
+                        nclr[0] += c.vr;
+                        nclr[1] += c.vg;
+                        nclr[2] += c.vb;
+                    }
+                }
+            }
+            if n > 0{
+                self.vr = nclr[0] / n as f32;
+                self.vg = nclr[1] / n as f32;
+                self.vb = nclr[2] / n as f32;
+                self.filled = true;
+                self.children = [const { None };8];
+                return;
+            }
+        }
+
         let a = !self.children.iter().any(|c| c.is_none());
         let b = !self
             .children
@@ -114,13 +137,12 @@ impl CpuTileData {
 }
 impl ChunkData {
     pub fn new(d: i32) -> Self {
+        let size = 2_f32.powi(d);
         Self {
             gpu_chunk_data: GpuChunkData {
                 max_d: d,
-                size: 2_f32.powi(d),
-                x: 0.,
-                y: 0.,
-                z: 0.,
+                size,
+                orgin : [size / 2., size / 2., size / 2.],
                 ..Default::default()
             },
             gpu_data: Vec::new(),
@@ -139,13 +161,6 @@ impl ChunkData {
         }
     }
     pub fn make_buffers(&mut self, device: &wgpu::Device) {
-        self.gpu_mapdata_buffer = Some(device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: None,
-                contents: bytes_of(&self.gpu_chunk_data),
-                usage: wgpu::BufferUsages::STORAGE,
-            },
-        ));
         self.gpu_data_buffer = Some(
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: None,
@@ -184,7 +199,13 @@ impl ChunkData {
         })
     }
     pub fn get_bind_group(&self, device: &wgpu::Device) -> Option<wgpu::BindGroup> {
-        let map_data_buffer = self.gpu_mapdata_buffer.as_ref()?;
+        let map_data_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytes_of(&self.gpu_chunk_data),
+                usage: wgpu::BufferUsages::STORAGE,
+            },
+        );
         let gpu_data_buffer = self.gpu_data_buffer.as_ref()?;
         Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
@@ -203,7 +224,7 @@ impl ChunkData {
     }
 }
 impl ChunkData {
-    pub fn retrieve_value(&mut self, tar_pos: (f32, f32, f32)) -> Result<Box<CpuTileData>, ()> {
+    pub fn _retrieve_value(&mut self, tar_pos: (f32, f32, f32)) -> Result<Box<CpuTileData>, ()> {
         let mut cur_tile = &mut self.cpu_data;
         loop {
             if cur_tile.filled {
@@ -270,8 +291,8 @@ impl ChunkData {
             }
         }
     }
-    pub fn optimize(&mut self) {
-        self.cpu_data.optimize();
+    pub fn optimize(&mut self, min_rez : Option<i32>) {
+        self.cpu_data.optimize(min_rez);
     }
     pub fn serialize(&mut self) {
         let mut tile_data = vec![];

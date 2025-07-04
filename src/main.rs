@@ -2,7 +2,6 @@ use std::f32;
 use std::sync::Arc;
 use std::time::Instant;
 
-use bytemuck::cast;
 use rand::random_range;
 use wgpu::{ShaderModuleDescriptor, ShaderSource};
 use winit::application::ApplicationHandler;
@@ -17,6 +16,7 @@ mod map;
 mod screen;
 
 struct State<'a> {
+    def_vir_rez: u32,
     _instance: wgpu::Instance,
     surface: wgpu::Surface<'a>,
     _adapter: wgpu::Adapter,
@@ -46,18 +46,61 @@ struct App<'a> {
     _egui: Option<_EguiState>,
 }
 
-fn load_model(map: &mut map::ChunkData, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn load_model_full(
+    device: &wgpu::Device,
+    path: &str,
+    default_deph: Option<i32>,
+) -> Result<map::ChunkData, Box<dyn std::error::Error>> {
+    let d_d = default_deph.unwrap_or(0);
+    let d_size = 2_f32.powi(d_d);
+    let mut dims = [0_f32; 3];
+    let mut orgin = [0_f32; 3];
+    let mut n = 0;
     let vox_data = dot_vox::load(path)?;
     for model in vox_data.models.iter() {
         for voxel in model.voxels.iter() {
-            let pos = (voxel.x as f32, voxel.z as f32, voxel.y as f32);
+            dims[0] = dims[0].max(voxel.x as f32 * d_size);
+            dims[1] = dims[1].max(voxel.z as f32 * d_size);
+            dims[2] = dims[2].max(voxel.y as f32 * d_size);
+            orgin[0] += voxel.x as f32 * d_size;
+            orgin[1] += voxel.z as f32 * d_size;
+            orgin[2] += voxel.y as f32 * d_size;
+            n += 1;
+        }
+    }
+    orgin[0] /= n as f32;
+    orgin[1] /= n as f32;
+    orgin[2] /= n as f32;
+    let dim = f32::log2(dims[0].max(dims[1]).max(dims[2])).ceil() as i32;
+    let mut map = map::ChunkData::new(dim);
+    map.gpu_chunk_data.orgin = orgin;
+    let _ = _load_model(&mut map, path, d_d);
+    // map.optimize();
+    map.serialize();
+    map.make_buffers(device);
+    Ok(map)
+}
+fn _load_model(
+    map: &mut map::ChunkData,
+    path: &str,
+    deph: i32,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let d_size = 2_f32.powi(deph);
+    let vox_data = dot_vox::load(path)?;
+    for model in vox_data.models.iter() {
+        for voxel in model.voxels.iter() {
+            let pos = (
+                voxel.x as f32 * d_size,
+                voxel.z as f32 * d_size,
+                voxel.y as f32 * d_size,
+            );
             let color = vox_data.palette.get(voxel.i as usize).unwrap();
             let color = [
                 color.r as f32 / 255.,
                 color.g as f32 / 255.,
                 color.b as f32 / 255.,
             ];
-            let _ = map.insert_value(pos, 1, color);
+            let _ = map.insert_value(pos, deph, color);
         }
     }
     Ok(())
@@ -100,8 +143,12 @@ fn gen_sphere(map: &mut map::ChunkData, middle: (f32, f32, f32), sz: f32, dp: i3
 
 impl State<'_> {
     async fn new(window: Arc<Window>) -> Self {
+        let def_vir_rez = 150;
         let size = (window.inner_size().width, window.inner_size().height);
-        let vir_size = (130, (130. * (size.1 as f32 / size.0 as f32)) as u32);
+        let vir_size = (
+            def_vir_rez,
+            (def_vir_rez as f32 * (size.1 as f32 / size.0 as f32)) as u32,
+        );
 
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
         let surface = instance.create_surface(Arc::clone(&window)).unwrap();
@@ -130,53 +177,34 @@ impl State<'_> {
         let mut screen_data = screen::ScreenData::new(vir_size.0, vir_size.1);
         screen_data.set_buffers(&device);
         let mut chunks = vec![];
-        {
-            let mut map_data = map::ChunkData::new(6);
-            let _ = load_model(&mut map_data, "./assets/models/tree2.vox");
-            let _ = map_data.insert_value((0., 0., 0.), 2, [1., 1., 1.]);
-            map_data.gpu_chunk_data.x = 128.;
-            map_data.gpu_chunk_data.z = 96.;
-            map_data.gpu_chunk_data.y = 32.;
-            map_data.optimize();
+        if let Ok(mut map_data) = load_model_full(&device, "./assets/models/tree2.vox", None) {
+            map_data.gpu_chunk_data.pos = [64., 64., 64.];
+            chunks.push(map_data);
+        }
+        if let Ok(mut map_data) = load_model_full(&device, "./assets/models/cact1.vox", None) {
+            map_data.gpu_chunk_data.pos = [64., 64., 64.];
+            let _ = _load_model(&mut map_data, "./assets/models/cact2.vox", 0);
+            map_data.gpu_chunk_data.pos = [128., 128., 32.];
+            map_data.gpu_chunk_data.orgin[1] = 0.;
             map_data.serialize();
             map_data.make_buffers(&device);
             chunks.push(map_data);
         }
-        {
-            let mut map_data = map::ChunkData::new(5);
-            let _ = load_model(&mut map_data, "./assets/models/cact1.vox");
-            let _ = load_model(&mut map_data, "./assets/models/cact2.vox");
-            let _ = map_data.insert_value((0., 0., 0.), 2, [1., 1., 1.]);
-            map_data.gpu_chunk_data.x = 128.;
-            map_data.gpu_chunk_data.z = 256.;
-            map_data.gpu_chunk_data.y = 32.;
-            map_data.optimize();
+        if let Ok(mut map_data) = load_model_full(&device, "./assets/models/cact1.vox", None) {
+            map_data.gpu_chunk_data.pos = [64., 64., 64.];
+            let _ = _load_model(&mut map_data, "./assets/models/cact2.vox", 0);
+            map_data.gpu_chunk_data.pos = [128., 128., 64.];
+            map_data.gpu_chunk_data.orgin[1] = 0.;
+            map_data.gpu_chunk_data.rot[2] = f32::consts::PI / 2.;
             map_data.serialize();
             map_data.make_buffers(&device);
             chunks.push(map_data);
         }
-        {
-            let mut map_data = map::ChunkData::new(5);
-            let _ = load_model(&mut map_data, "./assets/models/cact1.vox");
-            let _ = load_model(&mut map_data, "./assets/models/cact2.vox");
-            let _ = map_data.insert_value((0., 0., 0.), 2, [1., 1., 1.]);
-            map_data.gpu_chunk_data.x = 128.;
-            map_data.gpu_chunk_data.z = 256.;
-            map_data.gpu_chunk_data.y = 32.;
-            map_data.gpu_chunk_data.yaw = f32::consts::PI / 2.;
-            map_data.optimize();
-            map_data.serialize();
-            map_data.make_buffers(&device);
-            chunks.push(map_data);
-        }
-
-
-
         for i in 0..3 {
             let mut map_data = map::ChunkData::new(7);
             gen_sphere(&mut map_data, (64., 64., 64.), 60., random_range(-3..4));
-            map_data.gpu_chunk_data.x = 128. + 128. * (i as f32);
-            map_data.optimize();
+            map_data.gpu_chunk_data.pos[0] = 128. + 128. * (i as f32);
+            map_data.optimize(None);
             map_data.serialize();
             map_data.make_buffers(&device);
             chunks.push(map_data);
@@ -184,9 +212,9 @@ impl State<'_> {
         for i in 0..3 {
             let mut map_data = map::ChunkData::new(6);
             gen_sphere(&mut map_data, (32., 32., 32.), 30., random_range(-4..2));
-            map_data.gpu_chunk_data.x = 128. + 64. * (i as f32);
-            map_data.gpu_chunk_data.z = 128.;
-            map_data.optimize();
+            map_data.gpu_chunk_data.pos[0] = 128. + 64. * (i as f32);
+            map_data.gpu_chunk_data.pos[2] = 128.;
+            map_data.optimize(None);
             map_data.serialize();
             map_data.make_buffers(&device);
             chunks.push(map_data);
@@ -194,21 +222,64 @@ impl State<'_> {
         for i in 0..3 {
             let mut map_data = map::ChunkData::new(6);
             gen_sphere(&mut map_data, (32., 32., 32.), 39., random_range(-4..2));
-            map_data.gpu_chunk_data.x = 128. + 64. * (i as f32);
-            map_data.gpu_chunk_data.z = 96.;
-            map_data.gpu_chunk_data.y = 64.;
-            map_data.optimize();
+            map_data.gpu_chunk_data.pos[0] = 128. + 64. * (i as f32);
+            map_data.gpu_chunk_data.pos[2] = 96.;
+            map_data.gpu_chunk_data.pos[1] = 64.;
+            map_data.optimize(None);
             map_data.serialize();
             map_data.make_buffers(&device);
             chunks.push(map_data);
         }
-        for i in 0..10 {
-            let mut map_data = map::ChunkData::new(6);
-            let _ = load_model(&mut map_data, "./assets/models/tree2.vox");
-            map_data.gpu_chunk_data.z = 48. * (i as f32) + random_range(-16. ..=16.);
-            map_data.gpu_chunk_data.x = random_range(-32. ..=32.);
-            map_data.gpu_chunk_data.y = random_range(-4. ..=4.);
-            map_data.optimize();
+        {
+        let mut or_pos = 0.;
+        for i in (-8..= 4).rev() {
+            if let Ok(mut map_data) = load_model_full(
+                &device,
+                "./assets/models/tree2.vox",
+                Some(i),
+            ) {
+                map_data.gpu_chunk_data.pos[2] = or_pos;
+                or_pos += map_data.gpu_chunk_data.size / 8.;
+                map_data.gpu_chunk_data.pos[0] = -128.;
+                map_data.gpu_chunk_data.pos[1] = 0.;
+                map_data.gpu_chunk_data.orgin[1] = 0.;
+                chunks.push(map_data);
+            }
+        }
+        }
+        for i in (0..=5).rev() {
+            if let Ok(mut map_data) = load_model_full(
+                &device,
+                "./assets/models/tree2.vox",
+                None,
+            ) {
+                map_data.gpu_chunk_data.pos[2] = -64.;
+                map_data.gpu_chunk_data.pos[0] = 64. * (5 - i) as f32;
+                map_data.gpu_chunk_data.pos[1] = 0.;
+                map_data.gpu_chunk_data.orgin[1] = 0.;
+                map_data.optimize(Some(i));
+                map_data.serialize();
+                map_data.make_buffers(&device);
+                chunks.push(map_data);
+            }
+        }
+
+        for i in 0..5 {
+            if let Ok(mut map_data) = load_model_full(
+                &device,
+                "./assets/models/tree2.vox",
+                Some(random_range(-1..=1)),
+            ) {
+                map_data.gpu_chunk_data.pos[2] = 48. * (i as f32) + random_range(-16. ..=16.);
+                map_data.gpu_chunk_data.pos[0] = random_range(-32. ..=32.);
+                map_data.gpu_chunk_data.pos[1] = random_range(-4. ..=4.);
+                map_data.gpu_chunk_data.orgin[1] = 0.;
+                chunks.push(map_data);
+            }
+        }
+        if let Ok(mut map_data) = load_model_full(&device, "./assets/models/cact1.vox", Some(-3)) {
+            map_data.gpu_chunk_data.orgin[1] = 0.;
+            let _ = _load_model(&mut map_data, "./assets/models/cact2.vox", -3);
             map_data.serialize();
             map_data.make_buffers(&device);
             chunks.push(map_data);
@@ -313,6 +384,7 @@ impl State<'_> {
         });
 
         Self {
+            def_vir_rez,
             _instance: instance,
             config,
             _adapter: adapter,
@@ -489,6 +561,23 @@ impl ApplicationHandler for App<'_> {
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
+            WindowEvent::Resized(new_size) => {
+                if let Some(state) = self.state.as_mut() {
+                    state.config.width = new_size.width;
+                    state.config.height = new_size.height;
+                    let vir_size = (
+                        state.def_vir_rez,
+                        (state.def_vir_rez as f32
+                            * (new_size.width as f32 / new_size.height as f32))
+                            as u32,
+                    );
+                    state.screen_data.resize(vir_size);
+                    state.screen_data.set_buffers(&state.device);
+                    state.cam_data.h_fov = 60.;
+                    state.cam_data.v_fov =
+                        state.cam_data.h_fov * (new_size.height as f32 / new_size.width as f32);
+                }
+            }
             WindowEvent::CloseRequested => {
                 println!("The close button was pressed; stopping");
                 event_loop.exit();
@@ -511,20 +600,20 @@ impl ApplicationHandler for App<'_> {
                 self.player_input();
 
                 if let Some(state) = self.state.as_mut() {
-                    state.chunks_data.first_mut().unwrap().gpu_chunk_data.yaw += 0.02;
-                    state.chunks_data.get_mut(1).unwrap().gpu_chunk_data.pitch += 0.02;
-                    state.chunks_data.get_mut(2).unwrap().gpu_chunk_data.pitch += 0.02;
-                    state.chunks_data.get_mut(3).unwrap().gpu_chunk_data.yaw += 0.02;
-                    state.chunks_data.get_mut(3).unwrap().gpu_chunk_data.pitch += 0.01;
-                    state.chunks_data.get_mut(3).unwrap().gpu_chunk_data.roll += 0.005;
-                    state
-                        .chunks_data
-                        .first_mut()
-                        .unwrap()
-                        .make_buffers(&state.device);
-                    state.chunks_data.get_mut(1).unwrap().make_buffers(&state.device);
-                    state.chunks_data.get_mut(2).unwrap().make_buffers(&state.device);
-                    state.chunks_data.get_mut(3).unwrap().make_buffers(&state.device);
+                    state.chunks_data.first_mut().unwrap().gpu_chunk_data.rot[2] += 0.02;
+                    state.chunks_data.get_mut(1).unwrap().gpu_chunk_data.rot[1] += 0.02;
+                    state.chunks_data.get_mut(2).unwrap().gpu_chunk_data.rot[1] += 0.02;
+                    state.chunks_data.get_mut(3).unwrap().gpu_chunk_data.rot[1] += 0.02;
+                    state.chunks_data.get_mut(3).unwrap().gpu_chunk_data.rot[2] += 0.01;
+                    state.chunks_data.get_mut(3).unwrap().gpu_chunk_data.rot[0] += 0.005;
+
+                    state.chunks_data.last_mut().unwrap().gpu_chunk_data.rot = [
+                        -state.cam_data.roll.to_radians(),
+                        (-state.cam_data.pitch + 70.).to_radians(),
+                        (-state.cam_data.yaw - 10.).to_radians(),
+                    ];
+                    let cact_pos = camera_fov(8., &state.cam_data, [0., -10., -15.]);
+                    state.chunks_data.last_mut().unwrap().gpu_chunk_data.pos = cact_pos;
                 }
 
                 let ln = self.state.as_ref().unwrap().chunks_data.len();
@@ -548,48 +637,92 @@ impl ApplicationHandler for App<'_> {
         }
     }
 }
+
+fn translate_point(point: [f32; 3], chunk_data: &map::GpuChunkData) -> Option<[f32; 3]> {
+    let mat_rol = ndarray::array![
+        [1., 0., 0., 0.,],
+        [0., chunk_data.rot[0].cos(), chunk_data.rot[0].sin(), 0.,],
+        [0., -chunk_data.rot[0].sin(), chunk_data.rot[0].cos(), 0.,],
+        [0., 0., 0., 1.,],
+    ];
+    let mat_pit = ndarray::array![
+        [chunk_data.rot[2].cos(), 0., -chunk_data.rot[2].sin(), 0.],
+        [0., 1., 0., 0.],
+        [chunk_data.rot[2].sin(), 0., chunk_data.rot[2].cos(), 0.],
+        [0., 0., 0., 1.]
+    ];
+    let mat_yaw = ndarray::array![
+        [chunk_data.rot[1].cos(), -chunk_data.rot[1].sin(), 0., 0.],
+        [chunk_data.rot[1].sin(), chunk_data.rot[1].cos(), 0., 0.,],
+        [0., 0., 1., 0.],
+        [0., 0., 0., 1.]
+    ];
+    let mat_rot = mat_yaw.dot(&mat_pit).dot(&mat_rol);
+    let mat_pos_0 = ndarray::array![
+        [1., 0., 0., chunk_data.orgin[0]],
+        [0., 1., 0., chunk_data.orgin[1]],
+        [0., 0., 1., chunk_data.orgin[2]],
+        [0., 0., 0., 1.]
+    ];
+    let mat_pos_1 = ndarray::array![
+        [1., 0., 0., -chunk_data.pos[0]],
+        [0., 1., 0., -chunk_data.pos[1]],
+        [0., 0., 1., -chunk_data.pos[2]],
+        [0., 0., 0., 1.]
+    ];
+    let mat_rot = mat_pos_0.dot(&mat_rot);
+    let mat_trans = mat_rot.dot(&mat_pos_1);
+    let npos = ndarray::array![point[0], point[1], point[2], 1.];
+    // let npos = npos.dot(&mat_trans);
+    let npos = mat_trans.dot(&npos);
+    Some([
+        npos.get(0).cloned().unwrap(),
+        npos.get(1).cloned().unwrap(),
+        npos.get(2).cloned().unwrap(),
+    ])
+}
+fn camera_fov(dist: f32, cam_data: &cam::GpuCamData, dst: [f32; 3]) -> [f32; 3] {
+    let rot_q1 = quaternion::mul(
+        quaternion::axis_angle([0., 1., 0.], -cam_data.yaw.to_radians()),
+        quaternion::axis_angle([0., 0., 1.], cam_data.pitch.to_radians()),
+    );
+    let rot_q2 = quaternion::mul(
+        quaternion::axis_angle([0., 1., 0.], dst[2].to_radians()),
+        quaternion::axis_angle([0., 0., 1.], dst[1].to_radians()),
+    );
+    let rot_q = quaternion::mul(rot_q1, rot_q2);
+    let pos = quaternion::rotate_vector(rot_q, [dist, 0., 0.]);
+    [
+        cam_data.pos[0] + pos[0],
+        cam_data.pos[1] + pos[1],
+        cam_data.pos[2] + pos[2],
+    ]
+}
+
 impl App<'_> {
     fn player_input(&mut self) {
         if let Some(state) = self.state.as_mut() {
             if self.input.is_key_pressed(KeyCode::KeyP) {
-                let rot_q1 =
-                    quaternion::axis_angle([0., 0., 1.], state.cam_data.pitch.to_radians());
-                let rot_q2 = quaternion::axis_angle([0., 1., 0.], -state.cam_data.yaw.to_radians());
-                let rot_q = quaternion::mul(rot_q2, rot_q1);
-                let pos = quaternion::rotate_vector(rot_q, [9., 0., 0.]);
-                let npos = (
-                    state.cam_data.pos[0] + pos[0],
-                    state.cam_data.pos[1] + pos[1],
-                    state.cam_data.pos[2] + pos[2],
-                );
+                let npos = camera_fov(16., &state.cam_data, [0.; 3]);
                 for chunk in state.chunks_data.iter_mut() {
-                    if npos.0 < chunk.gpu_chunk_data.x
-                        || npos.0 >= chunk.gpu_chunk_data.x + chunk.gpu_chunk_data.size
+                    if let Some(npos) =
+                        translate_point([npos[0], npos[1], npos[2]], &chunk.gpu_chunk_data)
                     {
-                        continue;
+                        if npos[0] < 0. || npos[0] >= chunk.gpu_chunk_data.size {
+                            continue;
+                        }
+                        if npos[1] < 0. || npos[1] >= chunk.gpu_chunk_data.size {
+                            continue;
+                        }
+                        if npos[2] < 0. || npos[2] >= chunk.gpu_chunk_data.size {
+                            continue;
+                        }
+
+                        let _ = chunk.insert_value((npos[0], npos[1], npos[2]), 1, [1., 1., 1.]);
+                        chunk.serialize();
+                        chunk.make_buffers(&state.device);
+                        break;
                     }
-                    if npos.1 < chunk.gpu_chunk_data.y
-                        || npos.1 >= chunk.gpu_chunk_data.y + chunk.gpu_chunk_data.size
-                    {
-                        continue;
-                    }
-                    if npos.2 < chunk.gpu_chunk_data.z
-                        || npos.2 >= chunk.gpu_chunk_data.z + chunk.gpu_chunk_data.size
-                    {
-                        continue;
-                    }
-                    let _ = chunk.insert_value(
-                        (
-                            npos.0 - chunk.gpu_chunk_data.x,
-                            npos.1 - chunk.gpu_chunk_data.y,
-                            npos.2 - chunk.gpu_chunk_data.z,
-                        ),
-                        1,
-                        [1., 1., 1.],
-                    );
-                    chunk.serialize();
-                    chunk.make_buffers(&state.device);
-                    break;
                 }
             }
             let speed = 5. * self.delta_time;

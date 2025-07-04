@@ -8,8 +8,8 @@ pub struct GpuCamData {
     pub roll: f32,
     pub yaw: f32,
     pub pitch: f32,
-    h_fov: f32,
-    v_fov: f32,
+    pub h_fov: f32,
+    pub v_fov: f32,
 }
 impl GpuCamData {
     pub fn new(dims: (u32, u32)) -> Self {

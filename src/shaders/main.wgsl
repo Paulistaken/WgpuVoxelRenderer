@@ -26,12 +26,9 @@ struct Quaternion {
 struct ChunkData {
     deph: i32,
     size: f32,
-    x: f32,
-    y: f32,
-    z: f32,
-    yaw: f32,
-    pitch: f32,
-    roll: f32,
+    pos : vec3f,
+    rot : vec3f,
+    orgin : vec3f,
 }
 struct TileData {
     filled: u32,
@@ -408,34 +405,34 @@ fn distance(a: vec3<f32>, b: vec3<f32>) -> f32 {
 fn translate_point(pos: vec3f) -> vec3f {
     let mat_rol = mat4x4(
         1., 0., 0., 0.,
-        0., cos(map_data.roll), sin(map_data.roll), 0.,
-        0., -sin(map_data.roll), cos(map_data.roll), 0.,
+        0., cos(map_data.rot.x), sin(map_data.rot.x), 0.,
+        0., -sin(map_data.rot.x), cos(map_data.rot.x), 0.,
         0., 0., 0., 1.,
     );
 
     let mat_pit = mat4x4(
-        cos(map_data.yaw), 0., -sin(map_data.yaw), 0.,
+        cos(map_data.rot.z), 0., -sin(map_data.rot.z), 0.,
         0., 1., 0., 0.,
-        sin(map_data.yaw), 0., cos(map_data.yaw), 0.,
+        sin(map_data.rot.z), 0., cos(map_data.rot.z), 0.,
         0., 0., 0., 1.,
     );
     let mat_yaw = mat4x4(
-        cos(map_data.pitch), -sin(map_data.pitch), 0., 0.,
-        sin(map_data.pitch), cos(map_data.pitch), 0., 0.,
+        cos(map_data.rot.y), -sin(map_data.rot.y), 0., 0.,
+        sin(map_data.rot.y), cos(map_data.rot.y), 0., 0.,
         0., 0., 1., 0,
         0., 0., 0., 1.,
     );
     let mat_rot = mat_rol * mat_pit * mat_yaw;
     let mat_pos_0 = mat4x4f(
-        1., 0., 0., map_data.size/2.,
-        0., 1., 0., map_data.size/2.,
-        0., 0., 1., map_data.size/2.,
+        1., 0., 0., map_data.orgin.x,
+        0., 1., 0., map_data.orgin.y,
+        0., 0., 1., map_data.orgin.z,
         0., 0., 0., 1.,
     );
     let mat_pos = mat4x4f(
-        1., 0., 0., -map_data.x,
-        0., 1., 0., -map_data.y,
-        0., 0., 1., -map_data.z,
+        1., 0., 0., -map_data.pos.x,
+        0., 1., 0., -map_data.pos.y,
+        0., 0., 1., -map_data.pos.z,
         0., 0., 0., 1.,
     );
     let mat_rot_2 = mat_rot * mat_pos_0;

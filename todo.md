@@ -1,11 +1,16 @@
-- [ ] Remake world to chunks
-    - [ ] Per chunk pixel raytracing
-        - [ ] Add distance data to pixels
-        - [ ] Reset deph data in each pixel during render
-        - [ ] Short circut when distance is greater than one already in pixel
-        - [ ] Split pipeline to per chunk compute and final render
-    - [ ] Add position to chunks
+- [x] Remake world to chunks
+    - [x] Per chunk pixel raytracing
+        - [x] Add distance data to pixels
+        - [x] Reset deph data in each pixel during render
+        - [x] Short circut when distance is greater than one already in pixel
+        - [x] Split pipeline to per chunk compute and final render
+    - [x] Add position to chunks
         - [ ] Trace chunks only when in angle
-    - [ ] Add multiple chunk loading
-    - [ ] Add dynamic chunk world
-- [ ] Tree generation
+    - [x] Add multiple chunk loading
+    - [x] Add dynamic chunk world
+    - [x] Chunk rotation
+- [ ] Dynamic voxel resolution
+    - [ ] Distance based detail decrease
+- [ ] Cpu raytracing for block placing
+- [ ] Vertex rendering for dynamic objects
+- [ ] Lighting

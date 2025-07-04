@@ -40,6 +40,18 @@ impl ScreenData {
             ..Default::default()
         }
     }
+    pub fn resize(&mut self, n_size : (u32, u32)){
+        self.gpu_data.width = n_size.0;
+        self.gpu_data.heigth = n_size.1;
+        self.pixel_data = vec![
+            GpuPixelData {
+                val: [0.1, 0.2, 0.8, 1.0],
+                deph: -1.,
+                ..Default::default()
+            };
+            (self.gpu_data.width * self.gpu_data.heigth) as usize
+        ];
+    }
     pub fn set_buffers(&mut self, device: &wgpu::Device) {
         self.pixel_data_buffer = Some(device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
