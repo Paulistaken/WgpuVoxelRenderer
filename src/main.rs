@@ -15,6 +15,21 @@ mod input;
 mod map;
 mod screen;
 
+fn distance(p1 : &[f32; 3], p2 : &[f32; 3]) -> f32{
+    f32::sqrt(
+        f32::powi(p1[0] - p2[0], 2) +
+        f32::powi(p1[1] - p2[1], 2) +
+        f32::powi(p1[2] - p2[2], 2)
+    )
+}
+
+fn min_angle_distance(a : f32, b : f32) -> f32{
+    let d1 = (a - b).abs();
+    let d2 = (a + 360. - b).abs();
+    let d3 = (a - 360. - b).abs();
+    d1.min(d2).min(d3)
+}
+
 struct State<'a> {
     def_vir_rez: u32,
     _instance: wgpu::Instance,
@@ -231,28 +246,25 @@ impl State<'_> {
             chunks.push(map_data);
         }
         {
-        let mut or_pos = 0.;
-        for i in (-8..= 4).rev() {
-            if let Ok(mut map_data) = load_model_full(
-                &device,
-                "./assets/models/tree2.vox",
-                Some(i),
-            ) {
-                map_data.gpu_chunk_data.pos[2] = or_pos;
-                or_pos += map_data.gpu_chunk_data.size / 8.;
-                map_data.gpu_chunk_data.pos[0] = -128.;
-                map_data.gpu_chunk_data.pos[1] = 0.;
-                map_data.gpu_chunk_data.orgin[1] = 0.;
-                chunks.push(map_data);
+            let mut or_pos = 0.;
+            for i in (-8..=4).rev() {
+                if let Ok(mut map_data) =
+                    load_model_full(&device, "./assets/models/tree2.vox", Some(i))
+                {
+                    map_data.gpu_chunk_data.pos[2] = or_pos;
+                    or_pos += map_data.gpu_chunk_data.size / 8.;
+                    map_data.gpu_chunk_data.pos[0] = -128.;
+                    map_data.gpu_chunk_data.pos[1] = 0.;
+                    map_data.gpu_chunk_data.orgin[1] = 0.;
+                    map_data.optimize(None);
+                    map_data.serialize();
+                    map_data.make_buffers(&device);
+                    chunks.push(map_data);
+                }
             }
         }
-        }
         for i in (0..=5).rev() {
-            if let Ok(mut map_data) = load_model_full(
-                &device,
-                "./assets/models/tree2.vox",
-                None,
-            ) {
+            if let Ok(mut map_data) = load_model_full(&device, "./assets/models/tree2.vox", None) {
                 map_data.gpu_chunk_data.pos[2] = -64.;
                 map_data.gpu_chunk_data.pos[0] = 64. * (5 - i) as f32;
                 map_data.gpu_chunk_data.pos[1] = 0.;
@@ -614,15 +626,30 @@ impl ApplicationHandler for App<'_> {
                     ];
                     let cact_pos = camera_fov(8., &state.cam_data, [0., -10., -15.]);
                     state.chunks_data.last_mut().unwrap().gpu_chunk_data.pos = cact_pos;
-                }
 
-                let ln = self.state.as_ref().unwrap().chunks_data.len();
+                let ln = state.chunks_data.len();
+
+                // let ids = state.chunks_data.iter().enumerate().filter_map(|(i,c)|{
+                //     if distance(&state.cam_data.pos, &c.gpu_chunk_data.pos) < c.gpu_chunk_data.size / 2.{
+                //         return Some(i);
+                //     }
+                //     let a1 = f32::atan2(-state.cam_data.pos[2] + c.gpu_chunk_data.pos[2], -state.cam_data.pos[0] + c.gpu_chunk_data.pos[0]).to_degrees();
+                //     let a2 = f32::atan2(state.cam_data.yaw.to_radians().sin(), state.cam_data.yaw.to_radians().cos()).to_degrees();
+                //     let d = min_angle_distance(a1, a2);
+                //     if d < state.cam_data.h_fov * 0.7{
+                //         Some(i)
+                //     }else{
+                //         None
+                //     }
+                // }).collect::<Vec<_>>();
 
                 let ids = (0..ln).collect::<Vec<_>>();
 
-                let _ = self.state.as_ref().unwrap().compue_chunks(&ids);
+                let _ = state.compue_chunks(&ids);
 
-                let _ = self.state.as_ref().unwrap().render();
+                let _ = state.render();
+                }
+
 
                 self.window.as_ref().unwrap().request_redraw();
             }

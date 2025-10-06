@@ -4,7 +4,7 @@ use wgpu::util::DeviceExt;
 #[repr(C)]
 #[derive(Default, Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GpuTileData {
-    pub filled: u32,
+    pub filled: i32,
     vr: f32,
     vg: f32,
     vb: f32,
@@ -14,7 +14,7 @@ pub struct GpuTileData {
 
 #[derive(Default, Debug, Clone)]
 pub struct CpuTileData {
-    pub filled: bool,
+    pub filled: i32,
     pub vr: f32,
     pub vg: f32,
     pub vb: f32,
@@ -30,14 +30,14 @@ pub struct CpuTileData {
 pub struct GpuChunkData {
     pub max_d: i32,
     pub size: f32,
-    __filla : f32,
-    __fillb : f32,
-    pub pos : [f32; 3],
-    __fill1 : f32,
-    pub rot : [f32; 3],
-    __fill2 : f32,
-    pub orgin : [f32; 3],
-    __fill3 : f32,
+    __filla: f32,
+    __fillb: f32,
+    pub pos: [f32; 3],
+    __fill1: f32,
+    pub rot: [f32; 3],
+    __fill2: f32,
+    pub orgin: [f32; 3],
+    __fill3: f32,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -48,8 +48,8 @@ pub struct ChunkData {
     gpu_data_buffer: Option<wgpu::Buffer>,
 }
 impl CpuTileData {
-    fn optimize(&mut self, min_rez : Option<i32>) {
-        if self.filled {
+    fn optimize(&mut self, min_rez: Option<i32>) {
+        if self.filled == self.d {
             self.children.iter_mut().for_each(|c| {
                 *c = None;
             });
@@ -60,12 +60,12 @@ impl CpuTileData {
                 c.optimize(min_rez);
             }
         }
-        if min_rez.is_some_and(|r| self.d <= r){
+        if min_rez.is_some_and(|r| self.d <= r) {
             let mut n = 0;
             let mut nclr = [0_f32; 3];
-            for c in self.children.iter(){
-                if let Some(c) = c.as_ref(){
-                    if c.filled{
+            for c in self.children.iter() {
+                if let Some(c) = c.as_ref() {
+                    if c.filled == c.d {
                         n += 1;
                         nclr[0] += c.vr;
                         nclr[1] += c.vg;
@@ -73,12 +73,12 @@ impl CpuTileData {
                     }
                 }
             }
-            if n > 0{
+            if n > 0 {
                 self.vr = nclr[0] / n as f32;
                 self.vg = nclr[1] / n as f32;
                 self.vb = nclr[2] / n as f32;
-                self.filled = true;
-                self.children = [const { None };8];
+                self.filled = self.d;
+                self.children = [const { None }; 8];
                 return;
             }
         }
@@ -88,14 +88,14 @@ impl CpuTileData {
             .children
             .iter()
             .filter_map(|c| c.as_ref())
-            .any(|c| !c.filled);
+            .any(|c| c.filled != c.d);
         if a && b {
             let clr = self
                 .children
                 .iter()
                 .map(|c| c.as_ref().unwrap())
                 .fold([0., 0., 0.], |a, c| [a[0] + c.vr, a[1] + c.vg, a[2] + c.vb]);
-            self.filled = true;
+            self.filled = self.d;
             self.vr = clr[0] / 8.;
             self.vg = clr[1] / 8.;
             self.vb = clr[2] / 8.;
@@ -116,7 +116,7 @@ impl CpuTileData {
         indexed.push(index);
         let mut indexes = [0_u32; 8];
 
-        if !self.filled {
+        if self.filled != self.d {
             for (i, child) in self.children.iter().enumerate() {
                 if let Some(child) = child.as_ref() {
                     indexes[i] = child.serialize(global_index, gpu_data, indexed);
@@ -125,7 +125,7 @@ impl CpuTileData {
         }
 
         gpu_data[index as usize] = GpuTileData {
-            filled: if self.filled { 1 } else { 0 },
+            filled: self.filled,
             vr: self.vr,
             vg: self.vg,
             vb: self.vb,
@@ -142,12 +142,12 @@ impl ChunkData {
             gpu_chunk_data: GpuChunkData {
                 max_d: d,
                 size,
-                orgin : [size / 2., size / 2., size / 2.],
+                orgin: [size / 2., size / 2., size / 2.],
                 ..Default::default()
             },
             gpu_data: Vec::new(),
             cpu_data: Box::new(CpuTileData {
-                filled: false,
+                filled: -1000,
                 vr: 0.,
                 vg: 0.,
                 vb: 0.,
@@ -199,13 +199,11 @@ impl ChunkData {
         })
     }
     pub fn get_bind_group(&self, device: &wgpu::Device) -> Option<wgpu::BindGroup> {
-        let map_data_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: None,
-                contents: bytes_of(&self.gpu_chunk_data),
-                usage: wgpu::BufferUsages::STORAGE,
-            },
-        );
+        let map_data_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents: bytes_of(&self.gpu_chunk_data),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
         let gpu_data_buffer = self.gpu_data_buffer.as_ref()?;
         Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
@@ -227,7 +225,7 @@ impl ChunkData {
     pub fn _retrieve_value(&mut self, tar_pos: (f32, f32, f32)) -> Result<Box<CpuTileData>, ()> {
         let mut cur_tile = &mut self.cpu_data;
         loop {
-            if cur_tile.filled {
+            if cur_tile.filled == cur_tile.d {
                 return Ok(cur_tile.clone());
             }
 
@@ -260,9 +258,17 @@ impl ChunkData {
                 cur_tile.vr = color[0];
                 cur_tile.vg = color[1];
                 cur_tile.vb = color[2];
-                cur_tile.filled = true;
+                cur_tile.filled = cur_tile.d;
                 return Ok(());
             }
+
+            if cur_tile.filled < deph {
+                cur_tile.vr = color[0];
+                cur_tile.vg = color[1];
+                cur_tile.vb = color[2];
+            }
+
+            cur_tile.filled = cur_tile.filled.max(deph);
 
             let w = 2_f32.powi(cur_tile.d);
             let nw = w / 2.;
@@ -277,10 +283,10 @@ impl ChunkData {
                 cur_tile = cur_tile.children[id].as_mut().unwrap();
             } else {
                 cur_tile.children[id] = Some(Box::new(CpuTileData {
-                    filled: false,
-                    vr: 0.,
-                    vg: 0.,
-                    vb: 0.,
+                    filled: deph,
+                    vr: color[0],
+                    vg: color[1],
+                    vb: color[2],
                     x: cur_tile.x + nw * id_x as f32,
                     y: cur_tile.y + nw * id_y as f32,
                     z: cur_tile.z + nw * id_z as f32,
@@ -291,7 +297,7 @@ impl ChunkData {
             }
         }
     }
-    pub fn optimize(&mut self, min_rez : Option<i32>) {
+    pub fn optimize(&mut self, min_rez: Option<i32>) {
         self.cpu_data.optimize(min_rez);
     }
     pub fn serialize(&mut self) {

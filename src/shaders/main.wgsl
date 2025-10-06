@@ -31,7 +31,7 @@ struct ChunkData {
     orgin : vec3f,
 }
 struct TileData {
-    filled: u32,
+    filled: i32,
     vr: f32,
     vg: f32,
     vb: f32,
@@ -62,7 +62,6 @@ struct node_fill_return {
 ) {
     let pid = screen_data.width * id.y + id.x;
 
-
     let local_yaw = degre_to_rad(get_angle(id.x));
     let local_pitch = degre_to_rad(get_angle_pitch(id.y));
 
@@ -72,15 +71,15 @@ struct node_fill_return {
 
     let pos = vec3f(cam_data.pos.x, cam_data.pos.y, cam_data.pos.z);
 
-    var max_dist = 3000.;
-    if pixel_data[pid].deph > 0. {
+    var max_dist = 500.;
+    if pixel_data[pid].deph >= -0.1 {
         max_dist = min(max_dist, pixel_data[pid].deph);
     }
 
     let fill = traverse_ray(pos, local_yaw, local_pitch, cam_roll, cam_yaw, cam_pitch, max_dist);
 
     if fill.typ == 0 {
-        let strg = min(15. / fill.dist, 1.);
+        let strg = max(min(15. / fill.dist, 1.), 0.5);
         pixel_data[pid].deph = fill.dist;
         pixel_data[pid].val.r = strg * fill.col.r;
         pixel_data[pid].val.g = strg * fill.col.g;
@@ -119,12 +118,10 @@ fn traverse_ray(
         ),
     );
 
-    let op1 = start_pos;
     let omov = rotate_point(vec3f(1., 0., 0.), fin_q);
-    let op2 = op1 + omov;
 
-    let p1 = translate_point(op1);
-    let p2 = translate_point(op2);
+    let p1 = translate_point(start_pos);
+    let p2 = translate_point(start_pos + omov);
 
     var pos = p1;
 
@@ -144,11 +141,13 @@ fn traverse_ray(
             break;
         }
 
+        let max_deph = min(-8 + i32(distance(p1, pos) / max_dist * 16.), 2);
+
         let d = is_node_filled(vec3(
             pos.x,
             pos.y,
             pos.z
-        ));
+        ), max_deph);
 
         if d.fill == 0 {
             let dist = distance(p1, pos);
@@ -159,9 +158,9 @@ fn traverse_ray(
                 pos,
                 mov,
                 vec3(
-                    d.b1.x - d.size / 90.,
-                    d.b1.y - d.size / 90.,
-                    d.b1.z - d.size / 90.
+                    d.b1.x - d.size * 0.01,
+                    d.b1.y - d.size * 0.01,
+                    d.b1.z - d.size * 0.01
                 ),
                 vec3(
                     d.b2.x,
@@ -190,6 +189,26 @@ fn enter_chunk(start_pos: vec3f, mov: vec3f, chunk_size: f32, max_dist: f32) -> 
                 return enterchunk(1, start_pos);
             }
         }
+    }
+
+    if start_pos.x < 0. && mov.x < 0.{
+        return enterchunk(0, vec3f(0., 0., 0.));
+    }
+    if start_pos.y < 0. && mov.y < 0.{
+        return enterchunk(0, vec3f(0., 0., 0.));
+    }
+    if start_pos.z < 0. && mov.z < 0.{
+        return enterchunk(0, vec3f(0., 0., 0.));
+    }
+
+    if start_pos.x > chunk_size && mov.x > 0.{
+        return enterchunk(0, vec3f(0., 0., 0.));
+    }
+    if start_pos.y > chunk_size && mov.y > 0.{
+        return enterchunk(0, vec3f(0., 0., 0.));
+    }
+    if start_pos.z > chunk_size && mov.z > 0.{
+        return enterchunk(0, vec3f(0., 0., 0.));
     }
 
     var t = max_dist + 10.;
@@ -288,7 +307,7 @@ fn cross_area(pos: vec3<f32>, mov: vec3<f32>, b1: vec3<f32>, b2: vec3<f32>) -> v
     return vec3(pos.x + mov.x * t, pos.y + mov.y * t, pos.z + mov.z * t);
 }
 
-fn is_node_filled(tar_pos: vec3f) -> node_fill_return {
+fn is_node_filled(tar_pos: vec3f, max_deph : i32) -> node_fill_return {
     if tar_pos.x < 0. || tar_pos.x > map_data.size {
         return return_err(1);
     }
@@ -303,7 +322,7 @@ fn is_node_filled(tar_pos: vec3f) -> node_fill_return {
     var w = pow(2., f32(cur_tile.d));
     var c_pos = vec3f(0., 0., 0.);
     loop {
-        if cur_tile.filled == 1 {
+        if cur_tile.filled == cur_tile.d || (cur_tile.d <= max_deph && cur_tile.filled > -1000)  {
             return return_fill(0, vec3(c_pos.x, c_pos.y, c_pos.z), vec3f(cur_tile.vr, cur_tile.vg, cur_tile.vb), w);
         }
         let nw = w / 2.;
@@ -325,7 +344,7 @@ fn is_node_filled(tar_pos: vec3f) -> node_fill_return {
 
         let id = id_z * 4 + id_y * 2 + id_x;
 
-        if cur_tile.children[id] == 0 {
+        if cur_tile.children[id] == 0 ||cur_tile.d <= max_deph {
             let nx = c_pos.x + (nw * f32(id_x));
             let ny = c_pos.y + (nw * f32(id_y));
             let nz = c_pos.z + (nw * f32(id_z));
