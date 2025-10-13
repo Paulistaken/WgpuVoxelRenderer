@@ -6,6 +6,9 @@ pub struct InputManager{
     data : FastHashMap<PhysicalKey, bool>,
     data_time : FastHashMap<PhysicalKey, std::time::Instant>,
     instant_tm : std::time::Duration,
+    pub axis_moved_x: (f32, std::time::Instant),
+    pub axis_moved_y: (f32, std::time::Instant),
+
 }
 impl Default for InputManager{
     fn default() -> Self {
@@ -13,6 +16,9 @@ impl Default for InputManager{
             data : FastHashMap::default(),
             data_time : FastHashMap::default(),
             instant_tm : std::time::Duration::from_millis(10),
+            axis_moved_x : (0., std::time::Instant::now()),
+            axis_moved_y : (0., std::time::Instant::now()),
+
         }
     }
 }

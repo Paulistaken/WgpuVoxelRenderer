@@ -5,6 +5,7 @@ use std::time::Instant;
 use rand::random_range;
 use wgpu::{ShaderModuleDescriptor, ShaderSource};
 use winit::application::ApplicationHandler;
+use winit::dpi::{LogicalPosition, PhysicalPosition};
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::KeyCode;
@@ -626,6 +627,38 @@ impl ApplicationHandler for App<'_> {
 
                 self.window.as_ref().unwrap().request_redraw();
             }
+            WindowEvent::CursorMoved {
+                device_id: _,
+                position,
+            } => {
+                let sz = self.window.as_ref().unwrap().inner_size();
+                self.window.as_ref().unwrap().set_cursor_visible(false);
+                let _ = self
+                    .window
+                    .as_ref()
+                    .unwrap()
+                    .set_cursor_grab(winit::window::CursorGrabMode::Locked);
+
+                let _ = self
+                    .window
+                    .as_ref()
+                    .unwrap()
+                    .set_cursor_position(PhysicalPosition::new(sz.width / 2, sz.height / 2));
+                let _ = self
+                    .window
+                    .as_ref()
+                    .unwrap()
+                    .set_cursor_grab(winit::window::CursorGrabMode::Confined);
+
+                let disp = (
+                    position.x as f32 - (sz.width / 2) as f32,
+                    position.y as f32 - (sz.height / 2) as f32,
+                );
+                self.input.axis_moved_x.0 = disp.0 / (sz.width as f32 / 2.);
+                self.input.axis_moved_y.0 = disp.1 / (sz.height as f32 / 2.);
+                self.input.axis_moved_x.1 = std::time::Instant::now();
+                self.input.axis_moved_y.1 = std::time::Instant::now();
+            }
             WindowEvent::KeyboardInput {
                 device_id: _,
                 event,
@@ -772,6 +805,17 @@ impl App<'_> {
             }
             if self.input.is_key_pressed(KeyCode::KeyQ) {
                 state.cam_data.roll -= cam_speed;
+            }
+
+            state.cam_data.yaw += self.input.axis_moved_x.0 * cam_speed * 50.;
+            self.input.axis_moved_x.0 *= 0.1;
+            if self.input.axis_moved_x.0.abs() < 0.001 {
+                self.input.axis_moved_x.0 = 0.;
+            }
+            state.cam_data.pitch -= self.input.axis_moved_y.0 * cam_speed * 50.;
+            self.input.axis_moved_y.0 *= 0.1;
+            if self.input.axis_moved_y.0.abs() < 0.001 {
+                self.input.axis_moved_y.0 = 0.;
             }
         }
     }
