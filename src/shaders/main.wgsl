@@ -71,12 +71,14 @@ struct node_fill_return {
 
     let pos = vec3f(cam_data.pos.x, cam_data.pos.y, cam_data.pos.z);
 
-    var max_dist = 500.;
+    let a_max_dist = 500.;
+    var max_dist = a_max_dist;
+
     if pixel_data[pid].deph >= -0.1 {
         max_dist = min(max_dist, pixel_data[pid].deph);
     }
 
-    let fill = traverse_ray(pos, local_yaw, local_pitch, cam_roll, cam_yaw, cam_pitch, max_dist);
+    let fill = traverse_ray(pos, local_yaw, local_pitch, cam_roll, cam_yaw, cam_pitch, max_dist, a_max_dist);
 
     if fill.typ == 0 {
         let strg = max(min(15. / fill.dist, 1.), 0.5);
@@ -103,6 +105,7 @@ fn traverse_ray(
     c_yaw: f32,
     c_pit: f32,
     max_dist: f32,
+    a_max_dist: f32,
 ) -> ray_res {
     let fin_q = quaternion_multiply(
         quaternion_multiply(
@@ -141,7 +144,7 @@ fn traverse_ray(
             break;
         }
 
-        let max_deph = min(-8 + i32(distance(p1, pos) / max_dist * 16.), 2);
+        let max_deph = min(-8 + i32(distance(p1, pos) / a_max_dist * 24.), 2);
 
         let d = is_node_filled(vec3(
             pos.x,
