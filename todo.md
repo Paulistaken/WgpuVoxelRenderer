@@ -9,8 +9,8 @@
     - [x] Add multiple chunk loading
     - [x] Add dynamic chunk world
     - [x] Chunk rotation
-- [ ] Dynamic voxel resolution
-    - [ ] Distance based detail decrease
+- [x] Dynamic voxel resolution
+    - [x] Distance based LOD
 - [ ] Cpu raytracing for block placing
 - [ ] Vertex rendering for dynamic objects
 - [ ] Lighting
