@@ -5,9 +5,10 @@ use wgpu::util::DeviceExt;
 #[derive(Default, Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GpuTileData {
     pub filled: i32,
-    vr: f32,
-    vg: f32,
-    vb: f32,
+    color: [f32; 3],
+    // vr: f32,
+    // vg: f32,
+    // vb: f32,
     pub children: [u32; 8],
     pub d: i32,
 }
@@ -28,16 +29,14 @@ pub struct CpuTileData {
 #[repr(C)]
 #[derive(Default, Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GpuChunkData {
+    pub pos: [f32; 3],
+    __fill_pos: f32,
+    pub rot: [f32; 3],
+    __fill_rot: f32,
+    pub orgin: [f32; 3],
     pub max_d: i32,
     pub size: f32,
-    __filla: f32,
-    __fillb: f32,
-    pub pos: [f32; 3],
-    __fill1: f32,
-    pub rot: [f32; 3],
-    __fill2: f32,
-    pub orgin: [f32; 3],
-    __fill3: f32,
+    __fill: [f32; 3],
 }
 
 #[derive(Default, Debug, Clone)]
@@ -126,9 +125,7 @@ impl CpuTileData {
 
         gpu_data[index as usize] = GpuTileData {
             filled: self.filled,
-            vr: self.vr,
-            vg: self.vg,
-            vb: self.vb,
+            color: [self.vr, self.vg, self.vb],
             children: indexes,
             d: self.d,
         };

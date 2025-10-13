@@ -16,21 +16,15 @@ struct VertexOutput {
 @group(0) @binding(0) var<storage, read> screen_data: ScreenData;
 @group(0) @binding(1) var<storage, read_write> pixel_data: array<PixelData>;
 
-@compute @workgroup_size(1)fn clean_screen(
+@compute @workgroup_size(1)fn reset_screen(
     @builtin(global_invocation_id) id: vec3<u32>
 ) {
     let pid = screen_data.width * id.y + id.x;
-
     if pixel_data[pid].deph < 0. {
         pixel_data[pid].val.r = 0.1;
         pixel_data[pid].val.g = 0.4;
         pixel_data[pid].val.b = 0.7;
     }
-}
-@compute @workgroup_size(1)fn reset_screen(
-    @builtin(global_invocation_id) id: vec3<u32>
-) {
-    let pid = screen_data.width * id.y + id.x;
     pixel_data[pid].deph = -1.;
 }
 

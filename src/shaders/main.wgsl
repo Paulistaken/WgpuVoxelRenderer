@@ -24,11 +24,11 @@ struct Quaternion {
 }
 
 struct ChunkData {
-    deph: i32,
-    size: f32,
     pos : vec3f,
     rot : vec3f,
     orgin : vec3f,
+    deph: i32,
+    size: f32,
 }
 struct TileData {
     filled: i32,
@@ -78,24 +78,11 @@ struct node_fill_return {
         max_dist = min(max_dist, pixel_data[pid].deph);
     }
 
-    let fill = traverse_ray(pos, local_yaw, local_pitch, cam_roll, cam_yaw, cam_pitch, max_dist, a_max_dist);
-
-    if fill.typ == 0 {
-        let strg = max(min(15. / fill.dist, 1.), 0.5);
-        pixel_data[pid].deph = fill.dist;
-        pixel_data[pid].val.r = strg * fill.col.r;
-        pixel_data[pid].val.g = strg * fill.col.g;
-        pixel_data[pid].val.b = strg * fill.col.b;
-    }
+    
+    traverse_ray(pos, local_yaw, local_pitch, cam_roll, cam_yaw, cam_pitch, max_dist, a_max_dist, pid);
 }
 
 
-
-struct ray_res {
-    typ: u32,
-    dist: f32,
-    col: vec3f,
-}
 
 fn traverse_ray(
     start_pos: vec3<f32>,
@@ -106,7 +93,8 @@ fn traverse_ray(
     c_pit: f32,
     max_dist: f32,
     a_max_dist: f32,
-) -> ray_res {
+    pid : u32,
+) {
     let fin_q = quaternion_multiply(
         quaternion_multiply(
             rotate_q_by_axis(-c_yaw, vec3f(0., 1., 0.)),
@@ -133,18 +121,21 @@ fn traverse_ray(
     let e_c = enter_chunk(p1, mov, map_data.size, max_dist);
 
     if e_c.can == 0 {
-        return ray_res(2, 0., vec3f(0., 0., 0.));
+        return;
     }
 
     pos = e_c.pos;
 
+    var dist = distance(p1,pos);
     for (; ;) {
+        dist = distance(p1, pos);
 
-        if distance(p1, pos) > max_dist {
-            break;
+
+        if dist > max_dist {
+            return;
         }
 
-        let max_deph = min(-8 + i32(distance(p1, pos) / a_max_dist * 24.), 2);
+        let max_deph = min(-8 + i32(dist / a_max_dist * 24.), 2);
 
         let d = is_node_filled(vec3(
             pos.x,
@@ -152,31 +143,37 @@ fn traverse_ray(
             pos.z
         ), max_deph);
 
-        if d.fill == 0 {
-            let dist = distance(p1, pos);
-            return ray_res(0, dist, vec3f(d.col.r, d.col.g, d.col.b));
-        }
-        if d.fill == 1 {
-            pos = cross_area(
-                pos,
-                mov,
-                vec3(
-                    d.b1.x - d.size * 0.01,
-                    d.b1.y - d.size * 0.01,
-                    d.b1.z - d.size * 0.01
-                ),
-                vec3(
-                    d.b2.x,
-                    d.b2.y,
-                    d.b2.z
-                )
-            );
-        }
-        if d.fill == 2 {
-            break;
+        switch d.fill{
+            case 0u: {
+                let strg = max(min(15. / dist, 1.), 0.5);
+                pixel_data[pid].deph = dist;
+                pixel_data[pid].val.r = strg * d.col.r;
+                pixel_data[pid].val.g = strg * d.col.g;
+                pixel_data[pid].val.b = strg * d.col.b;
+                return;
+            }
+            case 1u: {
+	            pos = cross_area(
+	                pos,
+	                mov,
+	                vec3(
+	                    d.b1.x - d.size * 0.01,
+	                    d.b1.y - d.size * 0.01,
+	                    d.b1.z - d.size * 0.01
+	                ),
+	                vec3(
+	                    d.b2.x,
+	                    d.b2.y,
+	                    d.b2.z
+	                )
+	            );
+            }
+            case 2u: {
+                return;
+            }
+            default: {}
         }
     }
-    return ray_res(2, 0., vec3f(0., 0., 0.));
 }
 
 struct enterchunk {
@@ -185,7 +182,6 @@ struct enterchunk {
 }
 
 fn enter_chunk(start_pos: vec3f, mov: vec3f, chunk_size: f32, max_dist: f32) -> enterchunk {
-
     if start_pos.x >= 0. && start_pos.x < chunk_size {
         if start_pos.y >= 0. && start_pos.y < chunk_size {
             if start_pos.z >= 0. && start_pos.z < chunk_size {
@@ -194,27 +190,14 @@ fn enter_chunk(start_pos: vec3f, mov: vec3f, chunk_size: f32, max_dist: f32) -> 
         }
     }
 
-    if start_pos.x < 0. && mov.x < 0.{
+    if (start_pos.x < 0. && mov.x < 0.) || (start_pos.y < 0. && mov.y < 0.) || (start_pos.z < 0. && mov.z < 0.){
         return enterchunk(0, vec3f(0., 0., 0.));
     }
-    if start_pos.y < 0. && mov.y < 0.{
-        return enterchunk(0, vec3f(0., 0., 0.));
-    }
-    if start_pos.z < 0. && mov.z < 0.{
+    if (start_pos.x > chunk_size && mov.x > 0.) || (start_pos.y > chunk_size && mov.y > 0.) || (start_pos.z > chunk_size && mov.z > 0.){
         return enterchunk(0, vec3f(0., 0., 0.));
     }
 
-    if start_pos.x > chunk_size && mov.x > 0.{
-        return enterchunk(0, vec3f(0., 0., 0.));
-    }
-    if start_pos.y > chunk_size && mov.y > 0.{
-        return enterchunk(0, vec3f(0., 0., 0.));
-    }
-    if start_pos.z > chunk_size && mov.z > 0.{
-        return enterchunk(0, vec3f(0., 0., 0.));
-    }
-
-    var t = max_dist + 10.;
+    var t = max_dist + 1.;
     if mov.x != 0 {
         let d1 = (-start_pos.x + 0.001) / mov.x;
         let d2 = (chunk_size - start_pos.x - 0.001) / mov.x;

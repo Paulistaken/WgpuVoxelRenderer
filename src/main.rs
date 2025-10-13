@@ -15,15 +15,13 @@ mod input;
 mod map;
 mod screen;
 
-fn distance(p1 : &[f32; 3], p2 : &[f32; 3]) -> f32{
+fn distance(p1: &[f32; 3], p2: &[f32; 3]) -> f32 {
     f32::sqrt(
-        f32::powi(p1[0] - p2[0], 2) +
-        f32::powi(p1[1] - p2[1], 2) +
-        f32::powi(p1[2] - p2[2], 2)
+        f32::powi(p1[0] - p2[0], 2) + f32::powi(p1[1] - p2[1], 2) + f32::powi(p1[2] - p2[2], 2),
     )
 }
 
-fn min_angle_distance(a : f32, b : f32) -> f32{
+fn min_angle_distance(a: f32, b: f32) -> f32 {
     let d1 = (a - b).abs();
     let d2 = (a + 360. - b).abs();
     let d3 = (a - 360. - b).abs();
@@ -40,7 +38,6 @@ struct State<'a> {
     config: wgpu::SurfaceConfiguration,
     voxel_render_pipeline: wgpu::RenderPipeline,
     voxel_render_compute_clear_pipeline: wgpu::ComputePipeline,
-    voxel_render_compute_clean_pipeline: wgpu::ComputePipeline,
     chunk_pipeline: wgpu::ComputePipeline,
     screen_data: screen::ScreenData,
     chunks_data: Vec<map::ChunkData>,
@@ -367,15 +364,6 @@ impl State<'_> {
             multiview: None,
             cache: None,
         });
-        let render_pipeline_clean =
-            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("Clean Screen Pipeline"),
-                layout: Some(&render_pipeline_layout),
-                module: &render_shader,
-                entry_point: Some("clean_screen"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                cache: None,
-            });
         let render_pipeline_reset =
             device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label: Some("Reset Screen Pipeline"),
@@ -403,7 +391,6 @@ impl State<'_> {
             surface,
             device,
             queue,
-            voxel_render_compute_clean_pipeline: render_pipeline_clean,
             voxel_render_compute_clear_pipeline: render_pipeline_reset,
             voxel_render_pipeline: render_pipeline,
             chunk_pipeline: compute_pipeline,
@@ -504,7 +491,7 @@ impl State<'_> {
                 timestamp_writes: None,
             });
             compute_pass.set_bind_group(0, Some(&screen_bind_group), &[]);
-            compute_pass.set_pipeline(&self.voxel_render_compute_clean_pipeline);
+            compute_pass.set_pipeline(&self.voxel_render_compute_clear_pipeline);
             compute_pass.dispatch_workgroups(
                 self.screen_data.gpu_data.width,
                 self.screen_data.gpu_data.heigth,
@@ -537,19 +524,6 @@ impl State<'_> {
 
             render_pass.set_pipeline(&self.voxel_render_pipeline);
             render_pass.draw(0..6, 0..1);
-        }
-        {
-            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: None,
-                timestamp_writes: None,
-            });
-            compute_pass.set_bind_group(0, Some(&screen_bind_group), &[]);
-            compute_pass.set_pipeline(&self.voxel_render_compute_clear_pipeline);
-            compute_pass.dispatch_workgroups(
-                self.screen_data.gpu_data.width,
-                self.screen_data.gpu_data.heigth,
-                1,
-            );
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -627,29 +601,28 @@ impl ApplicationHandler for App<'_> {
                     let cact_pos = camera_fov(8., &state.cam_data, [0., -10., -15.]);
                     state.chunks_data.last_mut().unwrap().gpu_chunk_data.pos = cact_pos;
 
-                let ln = state.chunks_data.len();
+                    let ln = state.chunks_data.len();
 
-                // let ids = state.chunks_data.iter().enumerate().filter_map(|(i,c)|{
-                //     if distance(&state.cam_data.pos, &c.gpu_chunk_data.pos) < c.gpu_chunk_data.size / 2.{
-                //         return Some(i);
-                //     }
-                //     let a1 = f32::atan2(-state.cam_data.pos[2] + c.gpu_chunk_data.pos[2], -state.cam_data.pos[0] + c.gpu_chunk_data.pos[0]).to_degrees();
-                //     let a2 = f32::atan2(state.cam_data.yaw.to_radians().sin(), state.cam_data.yaw.to_radians().cos()).to_degrees();
-                //     let d = min_angle_distance(a1, a2);
-                //     if d < state.cam_data.h_fov * 0.7{
-                //         Some(i)
-                //     }else{
-                //         None
-                //     }
-                // }).collect::<Vec<_>>();
+                    // let ids = state.chunks_data.iter().enumerate().filter_map(|(i,c)|{
+                    //     if distance(&state.cam_data.pos, &c.gpu_chunk_data.pos) < c.gpu_chunk_data.size / 2.{
+                    //         return Some(i);
+                    //     }
+                    //     let a1 = f32::atan2(-state.cam_data.pos[2] + c.gpu_chunk_data.pos[2], -state.cam_data.pos[0] + c.gpu_chunk_data.pos[0]).to_degrees();
+                    //     let a2 = f32::atan2(state.cam_data.yaw.to_radians().sin(), state.cam_data.yaw.to_radians().cos()).to_degrees();
+                    //     let d = min_angle_distance(a1, a2);
+                    //     if d < state.cam_data.h_fov * 0.7{
+                    //         Some(i)
+                    //     }else{
+                    //         None
+                    //     }
+                    // }).collect::<Vec<_>>();
 
-                let ids = (0..ln).collect::<Vec<_>>();
+                    let ids = (0..ln).collect::<Vec<_>>();
 
-                let _ = state.compue_chunks(&ids);
+                    let _ = state.compue_chunks(&ids);
 
-                let _ = state.render();
+                    let _ = state.render();
                 }
-
 
                 self.window.as_ref().unwrap().request_redraw();
             }
