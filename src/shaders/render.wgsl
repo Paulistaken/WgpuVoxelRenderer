@@ -20,12 +20,12 @@ struct VertexOutput {
     @builtin(global_invocation_id) id: vec3<u32>
 ) {
     let pid = screen_data.width * id.y + id.x;
-    if pixel_data[pid].deph < 0. {
+    if pixel_data[pid].deph > 999. {
         pixel_data[pid].val.r = 0.1;
         pixel_data[pid].val.g = 0.4;
         pixel_data[pid].val.b = 0.7;
     }
-    pixel_data[pid].deph = -1.;
+    pixel_data[pid].deph = 1000.;
 }
 
 

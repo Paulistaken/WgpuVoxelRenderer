@@ -72,17 +72,10 @@ struct node_fill_return {
     let pos = vec3f(cam_data.pos.x, cam_data.pos.y, cam_data.pos.z);
 
     let a_max_dist = 500.;
-    var max_dist = a_max_dist;
+    let max_dist = min(a_max_dist, pixel_data[pid].deph);
 
-    if pixel_data[pid].deph >= -0.1 {
-        max_dist = min(max_dist, pixel_data[pid].deph);
-    }
-
-    
     traverse_ray(pos, local_yaw, local_pitch, cam_roll, cam_yaw, cam_pitch, max_dist, a_max_dist, pid);
 }
-
-
 
 fn traverse_ray(
     start_pos: vec3<f32>,
@@ -130,7 +123,6 @@ fn traverse_ray(
     for (; ;) {
         dist = distance(p1, pos);
 
-
         if dist > max_dist {
             return;
         }
@@ -152,8 +144,11 @@ fn traverse_ray(
                 pixel_data[pid].val.b = strg * d.col.b;
                 return;
             }
-            case 1u: {
-	            pos = cross_area(
+            case 2u: {
+                return;
+            }
+            default: {
+        	    pos = cross_area(
 	                pos,
 	                mov,
 	                vec3(
@@ -167,11 +162,8 @@ fn traverse_ray(
 	                    d.b2.z
 	                )
 	            );
+
             }
-            case 2u: {
-                return;
-            }
-            default: {}
         }
     }
 }
@@ -294,13 +286,7 @@ fn cross_area(pos: vec3<f32>, mov: vec3<f32>, b1: vec3<f32>, b2: vec3<f32>) -> v
 }
 
 fn is_node_filled(tar_pos: vec3f, max_deph : i32) -> node_fill_return {
-    if tar_pos.x < 0. || tar_pos.x > map_data.size {
-        return return_err(1);
-    }
-    if tar_pos.y < 0. || tar_pos.y > map_data.size {
-        return return_err(1);
-    }
-    if tar_pos.z < 0. || tar_pos.z > map_data.size {
+    if tar_pos.x < 0. || tar_pos.x > map_data.size || tar_pos.y < 0. || tar_pos.y > map_data.size ||tar_pos.z < 0. || tar_pos.z > map_data.size {
         return return_err(1);
     }
 
@@ -330,7 +316,7 @@ fn is_node_filled(tar_pos: vec3f, max_deph : i32) -> node_fill_return {
 
         let id = id_z * 4 + id_y * 2 + id_x;
 
-        if cur_tile.children[id] == 0 ||cur_tile.d <= max_deph {
+        if cur_tile.children[id] == 0 || cur_tile.d <= max_deph {
             let nx = c_pos.x + (nw * f32(id_x));
             let ny = c_pos.y + (nw * f32(id_y));
             let nz = c_pos.z + (nw * f32(id_z));

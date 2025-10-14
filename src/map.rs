@@ -168,7 +168,7 @@ impl ChunkData {
     }
 }
 impl ChunkData {
-    pub fn get_group_layout(&self, device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    pub fn get_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: None,
             entries: &[
@@ -204,7 +204,7 @@ impl ChunkData {
         let gpu_data_buffer = self.gpu_data_buffer.as_ref()?;
         Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
-            layout: &self.get_group_layout(device),
+            layout: &Self::get_group_layout(device),
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
