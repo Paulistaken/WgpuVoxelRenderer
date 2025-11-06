@@ -188,7 +188,7 @@ impl State<'_> {
         self.chunks_data.push(chunk);
     }
     pub async fn new(window: Arc<Window>) -> Self {
-        let def_vir_rez = 150;
+        let def_vir_rez = 250;
         let size = (window.inner_size().width, window.inner_size().height);
         let vir_size = (
             def_vir_rez,

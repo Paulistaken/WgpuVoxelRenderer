@@ -34,35 +34,34 @@ fn vs_main(
     @builtin(vertex_index) in_vertex_index: u32,
 ) -> VertexOutput {
     var out: VertexOutput;
-
     var x = 0.;
     var y = 0.;
-
-    if in_vertex_index == 0 {
-        x = -1.0;
-        y = -1.0;
+    switch in_vertex_index{
+        case 0u : {
+            x = -1.0;
+            y = -1.0;
+        }
+        case 1u : {
+            x = -1.0;
+            y = 1.0;
+        }
+        case 2u : {
+            x = 1.0;
+            y = -1.0;
+        }
+        case 3u : {
+            x = -1.0;
+            y = 1.0;
+        }
+        case 4u : {
+            x = 1.0;
+            y = -1.0;
+        }
+        default : {
+            x = 1.0;
+            y = 1.0;
+        }
     }
-    if in_vertex_index == 1 {
-        x = -1.0;
-        y = 1.0;
-    }
-    if in_vertex_index == 2 {
-        x = 1.0;
-        y = -1.0;
-    }
-    if in_vertex_index == 3 {
-        x = -1.0;
-        y = 1.0;
-    }
-    if in_vertex_index == 4 {
-        x = 1.0;
-        y = -1.0;
-    }
-    if in_vertex_index == 5 {
-        x = 1.0;
-        y = 1.0;
-    }
-
     out.clip_position = vec4<f32>(x, y, 0.0, 1.0);
     out.vert_pos = out.clip_position.xyz;
     return out;

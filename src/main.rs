@@ -9,6 +9,7 @@ mod input;
 mod mainstate;
 mod map;
 mod screen;
+mod voxelize;
 
 pub fn load_model_full(
     device: &wgpu::Device,
