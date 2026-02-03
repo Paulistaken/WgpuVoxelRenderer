@@ -16,13 +16,6 @@ struct PixelData {
     deph: f32,
 }
 
-struct Quaternion {
-    x: f32,
-    y: f32,
-    z: f32,
-    w: f32,
-}
-
 struct ChunkData {
     pos: vec3f,
     rot: vec3f,
@@ -32,9 +25,7 @@ struct ChunkData {
 }
 struct TileData {
     filled: i32,
-    vr: f32,
-    vg: f32,
-    vb: f32,
+    col : u32,
     children: array<u32,8>,
     d: i32,
 }
@@ -74,7 +65,7 @@ struct node_fill_return {
     let a_max_dist = 500.;
     let max_dist = min(a_max_dist, pixel_data[pid].deph);
 
-    traverse_ray(pos, local_yaw, local_pitch, cam_roll, cam_yaw, cam_pitch, max_dist, a_max_dist, pid);
+    traverse_ray(pos, local_yaw, local_pitch, -cam_roll, -cam_yaw, -cam_pitch, max_dist, a_max_dist, pid);
 }
 
 fn traverse_ray(
@@ -88,20 +79,29 @@ fn traverse_ray(
     a_max_dist: f32,
     pid: u32,
 ) {
-    let fin_q = quaternion_multiply(
-        quaternion_multiply(
-            rotate_q_by_axis(-c_yaw, vec3f(0., 1., 0.)),
-            quaternion_multiply(
-                rotate_q_by_axis(c_pit, vec3f(0., 0., 1.)),
-                rotate_q_by_axis(c_roll, vec3f(1., 0., 0.))
-            )
-        ),
-        quaternion_multiply(
-            rotate_q_by_axis(l_pit, vec3f(0., 0., 1.)),
-            rotate_q_by_axis(-l_yaw, vec3f(0., 1., 0.)),
-        ),
+    let l_rot_m = mat3x3f(
+        cos(l_yaw), 0., sin(l_yaw),
+        0., 1., 0.,
+        -sin(l_yaw), 0., cos(l_yaw)
+    ) * mat3x3f(
+        1., 0., 0.,
+        0., cos(l_pit), -sin(l_pit),
+        0., sin(l_pit), cos(l_pit)
     );
-    let omov = rotate_point(vec3f(1., 0., 0.), fin_q);
+    let c_rot_m = mat3x3f(
+        cos(c_yaw), 0., sin(c_yaw),
+        0., 1., 0.,
+        -sin(c_yaw), 0., cos(c_yaw),
+    ) * mat3x3f(
+        1., 0., 0.,
+        0., cos(c_pit), -sin(c_pit),
+        0., sin(c_pit), cos(c_pit)
+    ) * mat3x3f(
+        cos(c_roll), -sin(c_roll), 0.,
+        sin(c_roll), cos(c_roll), 0.,
+        0., 0., 1
+    );
+    let omov = c_rot_m * (l_rot_m * vec3f(0., 0., 1.));
 
     let p1 = translate_point(start_pos);
     let p2 = translate_point(start_pos + omov);
@@ -124,7 +124,7 @@ fn traverse_ray(
         if pos.x < 0. || pos.x > map_data.size || pos.y < 0. || pos.y > map_data.size || pos.z < 0. || pos.z > map_data.size || dist >= max_dist {
             return;
         }
-        let max_deph = min(-24 + i32(dist / a_max_dist * 42.), 2);
+        let max_deph = min(-12 + i32(dist / a_max_dist * 42.), 2);
         let d = is_node_filled(vec3(
             pos.x,
             pos.y,
@@ -274,7 +274,7 @@ fn is_node_filled(tar_pos: vec3f, max_deph: i32) -> node_fill_return {
     var c_pos = vec3f(0., 0., 0.);
     loop {
         if cur_tile.filled == cur_tile.d || (cur_tile.d <= max_deph && cur_tile.filled > -1000) {
-            return return_fill(0u, vec3(c_pos.x, c_pos.y, c_pos.z), vec3f(cur_tile.vr, cur_tile.vg, cur_tile.vb), w);
+            return return_fill(0u, vec3(c_pos.x, c_pos.y, c_pos.z), vec3f(f32(cur_tile.col & 255)/255,f32(cur_tile.col >> 8 & 255)/255,f32(cur_tile.col >> 16 & 255)/255), w);
         }
         let nw = w / 2.;
 
@@ -311,32 +311,6 @@ fn return_err(err: u32) -> node_fill_return {
     return node_fill_return(2, err, vec3(0., 0., 0.), vec3(0., 0., 0.), 0., vec3f(0., 0., 0.));
 }
 
-fn rotate_point(point: vec3<f32>, rotation: Quaternion) -> vec3<f32> {
-    let q_point = Quaternion(point.x, point.y, point.z, 0.0);
-    let q_conj = Quaternion(-rotation.x, -rotation.y, -rotation.z, rotation.w);
-
-    let rotated_q = quaternion_multiply(quaternion_multiply(rotation, q_point), q_conj);
-
-    let rotated_point = vec3<f32>(rotated_q.x, rotated_q.y, rotated_q.z);
-    return rotated_point;
-}
-fn rotate_q_by_axis(a: f32, ax: vec3<f32>) -> Quaternion {
-    return Quaternion(
-        ax.x * sin(a / 2.),
-        ax.y * sin(a / 2.),
-        ax.z * sin(a / 2.),
-        cos(a / 2.),
-    );
-}
-fn quaternion_multiply(q1: Quaternion, q2: Quaternion) -> Quaternion {
-    let q = Quaternion(
-        q1.w * q2.x + q1.x * q2.w + q1.y * q2.z - q1.z * q2.y,
-        q1.w * q2.y - q1.x * q2.z + q1.y * q2.w + q1.z * q2.x,
-        q1.w * q2.z + q1.x * q2.y - q1.y * q2.x + q1.z * q2.w,
-        q1.w * q2.w - q1.x * q2.x - q1.y * q2.y - q1.z * q2.z,
-    );
-    return q;
-}
 
 fn degre_to_rad(val: f32) -> f32 {
     return (val / 180.) * 3.14;
@@ -362,42 +336,23 @@ fn distance(a: vec3<f32>, b: vec3<f32>) -> f32 {
 }
 
 fn translate_point(pos: vec3f) -> vec3f {
-    let mat_rol = mat4x4(
-        1., 0., 0., 0.,
-        0., cos(map_data.rot.x), sin(map_data.rot.x), 0.,
-        0., -sin(map_data.rot.x), cos(map_data.rot.x), 0.,
-        0., 0., 0., 1.,
+    let r_yaw = mat3x3f(
+        cos(-map_data.rot.y), 0., -sin(-map_data.rot.y),
+        0., 1., 0.,
+        sin(-map_data.rot.y), 0., cos(-map_data.rot.y),
+    );
+    let r_pit = mat3x3f(
+        1., 0., 0.,
+        0., cos(-map_data.rot.x), -sin(-map_data.rot.x),
+        0., sin(-map_data.rot.x), cos(-map_data.rot.x),
+    );
+    let r_roll = mat3x3f(
+        cos(-map_data.rot.z), -sin(-map_data.rot.z), 0.,
+        sin(-map_data.rot.z), cos(-map_data.rot.z), 0.,
+        0., 0., 1.,
     );
 
-    let mat_pit = mat4x4(
-        cos(map_data.rot.z), 0., -sin(map_data.rot.z), 0.,
-        0., 1., 0., 0.,
-        sin(map_data.rot.z), 0., cos(map_data.rot.z), 0.,
-        0., 0., 0., 1.,
-    );
-    let mat_yaw = mat4x4(
-        cos(map_data.rot.y), -sin(map_data.rot.y), 0., 0.,
-        sin(map_data.rot.y), cos(map_data.rot.y), 0., 0.,
-        0., 0., 1., 0.,
-        0., 0., 0., 1.,
-    );
-    let mat_rot = mat_rol * mat_pit * mat_yaw;
-    let mat_pos_0 = mat4x4(
-        1., 0., 0., map_data.orgin.x,
-        0., 1., 0., map_data.orgin.y,
-        0., 0., 1., map_data.orgin.z,
-        0., 0., 0., 1.,
-    );
-    let mat_pos = mat4x4(
-        1., 0., 0., -map_data.pos.x,
-        0., 1., 0., -map_data.pos.y,
-        0., 0., 1., -map_data.pos.z,
-        0., 0., 0., 1.,
-    );
-    let mat_rot_2 = mat_rot * mat_pos_0;
-    let mat_trans = mat_pos * mat_rot_2;
-
-    let npos = vec4f(pos.x, pos.y, pos.z, 1.) * mat_trans;
-
-    return vec3f(npos.x, npos.y, npos.z);
+    let rot = r_roll * r_pit * r_yaw;
+    
+    return (rot * (pos - map_data.pos - map_data.orgin)) + map_data.orgin;
 }

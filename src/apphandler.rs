@@ -2,24 +2,20 @@ use std::f32;
 use std::sync::Arc;
 use std::time::Instant;
 
-use super::cam;
-use super::map;
-use super::screen;
 
 use super::input;
 use super::mainstate;
 use super::mainstate::State;
-use rand::random_range;
-use wgpu::{ShaderModuleDescriptor, ShaderSource};
 use winit::application::ApplicationHandler;
-use winit::dpi::{LogicalPosition, PhysicalPosition};
+use winit::dpi::{PhysicalPosition};
 use winit::event::WindowEvent;
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::event_loop::{ActiveEventLoop};
 use winit::keyboard::KeyCode;
 use winit::window::{Window, WindowId};
 
 #[derive(Default)]
-pub struct GameState {}
+pub struct GameState {
+}
 impl GameState {
     pub fn player_input<'a>(
         &mut self,
@@ -28,7 +24,7 @@ impl GameState {
         delta_time: f32,
     ) {
         if input.is_key_pressed(KeyCode::KeyP) {
-            let npos = mainstate::camera_fov(16., &state.cam_data, [0.; 3]);
+            let npos = mainstate::camera_angle_disp(&state.cam_data, [0.; 3], [0., 0., 16.]);
 
             for chunk in state.chunks_data.iter_mut() {
                 if let Some(npos) =
@@ -62,37 +58,29 @@ impl GameState {
             state.cam_data.pos[1] += speed;
         }
         if input.is_key_pressed(KeyCode::KeyW) {
-            let dir = f32::to_radians(state.cam_data.yaw + 0.);
-            state.cam_data.pos[2] += f32::sin(dir) * speed;
-            state.cam_data.pos[0] += f32::cos(dir) * speed;
+            state.cam_data.pos = mainstate::camera_angle_disp(&state.cam_data, [0., 0., 0.], [0., 0., speed]);
         }
         if input.is_key_pressed(KeyCode::KeyS) {
-            let dir = f32::to_radians(state.cam_data.yaw + 180.);
-            state.cam_data.pos[2] += f32::sin(dir) * speed;
-            state.cam_data.pos[0] += f32::cos(dir) * speed;
+            state.cam_data.pos = mainstate::camera_angle_disp(&state.cam_data, [0., 0., 0.], [0., 0., -speed]);
         }
         if input.is_key_pressed(KeyCode::KeyA) {
-            let dir = f32::to_radians(state.cam_data.yaw - 90.);
-            state.cam_data.pos[2] += f32::sin(dir) * speed;
-            state.cam_data.pos[0] += f32::cos(dir) * speed;
+            state.cam_data.pos = mainstate::camera_angle_disp(&state.cam_data, [0., 0., 0.], [speed, 0., 0.]);
         }
         if input.is_key_pressed(KeyCode::KeyD) {
-            let dir = f32::to_radians(state.cam_data.yaw + 90.);
-            state.cam_data.pos[2] += f32::sin(dir) * speed;
-            state.cam_data.pos[0] += f32::cos(dir) * speed;
+            state.cam_data.pos = mainstate::camera_angle_disp(&state.cam_data, [0., 0., 0.], [-speed, 0., 0.]);
         }
 
         if input.is_key_pressed(KeyCode::KeyH) {
-            state.cam_data.yaw -= cam_speed;
-        }
-        if input.is_key_pressed(KeyCode::KeyL) {
             state.cam_data.yaw += cam_speed;
         }
+        if input.is_key_pressed(KeyCode::KeyL) {
+            state.cam_data.yaw -= cam_speed;
+        }
         if input.is_key_pressed(KeyCode::KeyK) {
-            state.cam_data.pitch += cam_speed;
+            state.cam_data.pitch -= cam_speed;
         }
         if input.is_key_pressed(KeyCode::KeyJ) {
-            state.cam_data.pitch -= cam_speed;
+            state.cam_data.pitch += cam_speed;
         }
         if input.is_key_pressed(KeyCode::KeyE) {
             state.cam_data.roll += cam_speed;
@@ -101,12 +89,12 @@ impl GameState {
             state.cam_data.roll -= cam_speed;
         }
 
-        state.cam_data.yaw += input.axis_moved_x.0 * cam_speed * 50.;
+        state.cam_data.yaw -= input.axis_moved_x.0 * cam_speed * 50.;
         input.axis_moved_x.0 *= 0.1;
         if input.axis_moved_x.0.abs() < 0.001 {
             input.axis_moved_x.0 = 0.;
         }
-        state.cam_data.pitch -= input.axis_moved_y.0 * cam_speed * 50.;
+        state.cam_data.pitch += input.axis_moved_y.0 * cam_speed * 50.;
         input.axis_moved_y.0 *= 0.1;
         if input.axis_moved_y.0.abs() < 0.001 {
             input.axis_moved_y.0 = 0.;
@@ -197,30 +185,29 @@ impl ApplicationHandler for App<'_> {
                     state.chunks_data.first_mut().unwrap().gpu_chunk_data.rot[2] += 0.02;
                     for i in 0..25 {
                         if i % 2 != 0 {
-                            state.chunks_data.get_mut(i).unwrap().gpu_chunk_data.rot[0] +=
-                                rand::random_range(0. ..0.02);
+                            state.chunks_data.get_mut(i).unwrap().gpu_chunk_data.rot[0] += 0.02;
                         }
                         if i % 3 != 0 {
-                            state.chunks_data.get_mut(i).unwrap().gpu_chunk_data.rot[1] +=
-                                rand::random_range(0. ..0.02);
+                            state.chunks_data.get_mut(i).unwrap().gpu_chunk_data.rot[1] += 0.02;
                         }
                         if i % 4 != 0 {
-                            state.chunks_data.get_mut(i).unwrap().gpu_chunk_data.rot[2] +=
-                                rand::random_range(0. ..0.02);
+                            state.chunks_data.get_mut(i).unwrap().gpu_chunk_data.rot[2] += 0.02;
                         }
                     }
+
                     state.chunks_data.get_mut(26).unwrap().gpu_chunk_data.rot[2] += 0.02;
                     state.chunks_data.get_mut(27).unwrap().gpu_chunk_data.rot[1] += 0.02;
                     state.chunks_data.get_mut(28).unwrap().gpu_chunk_data.rot[0] += 0.01;
                     state.chunks_data.get_mut(25).unwrap().gpu_chunk_data.rot[2] += 0.005;
 
                     state.chunks_data.last_mut().unwrap().gpu_chunk_data.rot = [
+                        -(state.cam_data.pitch+45.).to_radians(),
+                        state.cam_data.yaw.to_radians(),
                         -state.cam_data.roll.to_radians(),
-                        (-state.cam_data.pitch + 70.).to_radians(),
-                        (-state.cam_data.yaw - 10.).to_radians(),
                     ];
-                    let cact_pos = mainstate::camera_fov(8., &state.cam_data, [0., -10., -15.]);
+                    let cact_pos = mainstate::camera_angle_disp(&state.cam_data, [10., -20., 0.], [0., 0., 8.]);
                     state.chunks_data.last_mut().unwrap().gpu_chunk_data.pos = cact_pos;
+                    state.chunks_data.last_mut().unwrap().gpu_chunk_data.orgin = [0., 0., 0.];
 
                     let ln = state.chunks_data.len();
 

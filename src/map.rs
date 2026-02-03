@@ -1,49 +1,47 @@
 use bytemuck::{bytes_of, checked::cast_slice};
 use wgpu::util::DeviceExt;
 
-#[repr(C)]
-#[derive(Default, Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct GpuTileData {
-    pub filled: i32,
-    color: [f32; 3],
-    // vr: f32,
-    // vg: f32,
-    // vb: f32,
-    pub children: [u32; 8],
-    pub d: i32,
+use super::vects::Vec4f;
+
+pub mod gpu_data {
+    #[repr(C)]
+    #[derive(Default, Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+    pub struct GpuTileData {
+        pub filled: i32,
+        // pub color: [f32; 3],
+        pub color: u32,
+        pub children: [u32; 8],
+        pub d: i32,
+    }
+    #[repr(C)]
+    #[derive(Default, Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+    pub struct GpuChunkData {
+        pub pos: [f32; 3],
+        pub __fill_pos: f32,
+        pub rot: [f32; 3],
+        pub __fill_rot: f32,
+        pub orgin: [f32; 3],
+        pub max_d: i32,
+        pub size: f32,
+        pub __fill: [f32; 3],
+    }
 }
 
 #[derive(Default, Debug, Clone)]
 pub struct CpuTileData {
     pub filled: i32,
-    pub vr: f32,
-    pub vg: f32,
-    pub vb: f32,
+    pub color: Vec4f,
+    // pub color: [u32; 3],
     pub children: [Option<Box<CpuTileData>>; 8],
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
+    pub position: Vec4f,
     pub d: i32,
-}
-
-#[repr(C)]
-#[derive(Default, Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct GpuChunkData {
-    pub pos: [f32; 3],
-    __fill_pos: f32,
-    pub rot: [f32; 3],
-    __fill_rot: f32,
-    pub orgin: [f32; 3],
-    pub max_d: i32,
-    pub size: f32,
-    __fill: [f32; 3],
 }
 
 #[derive(Default, Debug, Clone)]
 pub struct ChunkData {
-    pub gpu_chunk_data: GpuChunkData,
+    pub gpu_chunk_data: gpu_data::GpuChunkData,
     cpu_data: Box<CpuTileData>,
-    gpu_data: Vec<GpuTileData>,
+    gpu_data: Vec<gpu_data::GpuTileData>,
     gpu_data_buffer: Option<wgpu::Buffer>,
 }
 impl CpuTileData {
@@ -61,21 +59,17 @@ impl CpuTileData {
         }
         if min_rez.is_some_and(|r| self.d <= r) {
             let mut n = 0;
-            let mut nclr = [0_f32; 3];
+            let mut nclr = Vec4f::ZERO;
             for c in self.children.iter() {
-                if let Some(c) = c.as_ref() {
-                    if c.filled == c.d {
-                        n += 1;
-                        nclr[0] += c.vr;
-                        nclr[1] += c.vg;
-                        nclr[2] += c.vb;
-                    }
+                if let Some(c) = c.as_ref()
+                    && c.filled == c.d
+                {
+                    n += 1;
+                    nclr += c.color;
                 }
             }
             if n > 0 {
-                self.vr = nclr[0] / n as f32;
-                self.vg = nclr[1] / n as f32;
-                self.vb = nclr[2] / n as f32;
+                self.color = nclr / Vec4f::from(n as f32);
                 self.filled = self.d;
                 self.children = [const { None }; 8];
                 return;
@@ -92,12 +86,11 @@ impl CpuTileData {
             let clr = self
                 .children
                 .iter()
-                .map(|c| c.as_ref().unwrap())
-                .fold([0., 0., 0.], |a, c| [a[0] + c.vr, a[1] + c.vg, a[2] + c.vb]);
+                .map(|c| c.as_ref().unwrap().color)
+                .fold(Vec4f::ZERO, |a, c| a + c)
+                / Vec4f::from(8.);
             self.filled = self.d;
-            self.vr = clr[0] / 8.;
-            self.vg = clr[1] / 8.;
-            self.vb = clr[2] / 8.;
+            self.color = clr;
             self.children.iter_mut().for_each(|c| {
                 *c = None;
             });
@@ -106,12 +99,12 @@ impl CpuTileData {
     fn serialize(
         &self,
         global_index: &mut u32,
-        gpu_data: &mut Vec<GpuTileData>,
+        gpu_data: &mut Vec<gpu_data::GpuTileData>,
         indexed: &mut Vec<u32>,
     ) -> u32 {
         let index = *global_index;
         *global_index += 1;
-        gpu_data.push(GpuTileData::default());
+        gpu_data.push(gpu_data::GpuTileData::default());
         indexed.push(index);
         let mut indexes = [0_u32; 8];
 
@@ -123,9 +116,14 @@ impl CpuTileData {
             }
         }
 
-        gpu_data[index as usize] = GpuTileData {
+        let mut ncolor = 0;
+        ncolor += (self.color.x() * 255.) as u32;
+        ncolor += ((self.color.y() * 255.) as u32) << 8;
+        ncolor += ((self.color.z() * 255.) as u32) << 16;
+        gpu_data[index as usize] = gpu_data::GpuTileData {
             filled: self.filled,
-            color: [self.vr, self.vg, self.vb],
+            // color: [self.color.x(), self.color.y(), self.color.z()],
+            color : ncolor,
             children: indexes,
             d: self.d,
         };
@@ -136,7 +134,7 @@ impl ChunkData {
     pub fn new(d: i32) -> Self {
         let size = 2_f32.powi(d);
         Self {
-            gpu_chunk_data: GpuChunkData {
+            gpu_chunk_data: gpu_data::GpuChunkData {
                 max_d: d,
                 size,
                 orgin: [size / 2., size / 2., size / 2.],
@@ -145,13 +143,9 @@ impl ChunkData {
             gpu_data: Vec::new(),
             cpu_data: Box::new(CpuTileData {
                 filled: -1000,
-                vr: 0.,
-                vg: 0.,
-                vb: 0.,
+                color: Vec4f::ZERO,
                 children: [const { Option::None }; 8],
-                x: 0.,
-                y: 0.,
-                z: 0.,
+                position: Vec4f::ZERO,
                 d,
             }),
             ..Default::default()
@@ -228,9 +222,21 @@ impl ChunkData {
 
             let w = 2_f32.powi(cur_tile.d) / 2.;
 
-            let id_x = if tar_pos.0 < cur_tile.x + w { 0 } else { 1 };
-            let id_y = if tar_pos.1 < cur_tile.y + w { 0 } else { 1 };
-            let id_z = if tar_pos.2 < cur_tile.z + w { 0 } else { 1 };
+            let id_x = if tar_pos.0 < cur_tile.position.x() + w {
+                0
+            } else {
+                1
+            };
+            let id_y = if tar_pos.1 < cur_tile.position.y() + w {
+                0
+            } else {
+                1
+            };
+            let id_z = if tar_pos.2 < cur_tile.position.z() + w {
+                0
+            } else {
+                1
+            };
 
             let id = (id_x + id_y * 2 + id_z * 4) as usize;
 
@@ -252,17 +258,13 @@ impl ChunkData {
         let mut cur_tile = &mut self.cpu_data;
         loop {
             if cur_tile.d == deph {
-                cur_tile.vr = color[0];
-                cur_tile.vg = color[1];
-                cur_tile.vb = color[2];
+                cur_tile.color = Vec4f::from([color[0], color[1], color[2]]);
                 cur_tile.filled = cur_tile.d;
                 return Ok(());
             }
 
             if cur_tile.filled < deph {
-                cur_tile.vr = color[0];
-                cur_tile.vg = color[1];
-                cur_tile.vb = color[2];
+                cur_tile.color = Vec4f::from([color[0], color[1], color[2]]);
             }
 
             cur_tile.filled = cur_tile.filled.max(deph);
@@ -270,9 +272,21 @@ impl ChunkData {
             let w = 2_f32.powi(cur_tile.d);
             let nw = w / 2.;
 
-            let id_x = if tar_pos.0 < cur_tile.x + nw { 0 } else { 1 };
-            let id_y = if tar_pos.1 < cur_tile.y + nw { 0 } else { 1 };
-            let id_z = if tar_pos.2 < cur_tile.z + nw { 0 } else { 1 };
+            let id_x = if tar_pos.0 < cur_tile.position.x() + nw {
+                0
+            } else {
+                1
+            };
+            let id_y = if tar_pos.1 < cur_tile.position.y() + nw {
+                0
+            } else {
+                1
+            };
+            let id_z = if tar_pos.2 < cur_tile.position.z() + nw {
+                0
+            } else {
+                1
+            };
 
             let id = (id_x + id_y * 2 + id_z * 4) as usize;
 
@@ -281,12 +295,9 @@ impl ChunkData {
             } else {
                 cur_tile.children[id] = Some(Box::new(CpuTileData {
                     filled: deph,
-                    vr: color[0],
-                    vg: color[1],
-                    vb: color[2],
-                    x: cur_tile.x + nw * id_x as f32,
-                    y: cur_tile.y + nw * id_y as f32,
-                    z: cur_tile.z + nw * id_z as f32,
+                    color: Vec4f::from([color[0], color[1], color[2]]),
+                    position: cur_tile.position
+                        + Vec4f::from([id_x as f32, id_y as f32, id_z as f32]) * Vec4f::from(nw),
                     d: cur_tile.d - 1,
                     children: [const { Option::None }; 8],
                 }));

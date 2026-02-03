@@ -2,7 +2,6 @@ use wgpu::naga::FastHashMap;
 use winit::{
     event::KeyEvent,
     keyboard::{KeyCode, PhysicalKey},
-    platform::scancode::PhysicalKeyExtScancode,
 };
 
 #[derive(Debug, Clone)]

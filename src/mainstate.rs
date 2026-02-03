@@ -6,69 +6,67 @@ use super::map;
 use super::screen;
 
 use rand::random_range;
+use voxelizer::Vector3;
 use wgpu::{ShaderModuleDescriptor, ShaderSource};
 use winit::window::Window;
 
-pub fn camera_fov(dist: f32, cam_data: &cam::GpuCamData, dst: [f32; 3]) -> [f32; 3] {
-    let rot_q1 = quaternion::mul(
-        quaternion::axis_angle([0., 1., 0.], -cam_data.yaw.to_radians()),
-        quaternion::axis_angle([0., 0., 1.], cam_data.pitch.to_radians()),
+const VIR_RES_X : u32 = 125;
+pub fn camera_angle_disp(cam_data: &cam::GpuCamData, angle_displace: [f32; 3], displace: [f32; 3]) -> [f32; 3] {
+    let disp_rot = nalgebra::Matrix3::new(
+        angle_displace[1].to_radians().cos(), 0., angle_displace[1].to_radians().sin(),
+        0., 1., 0.,
+        -(angle_displace[1].to_radians().sin()), 0., angle_displace[1].to_radians().cos()
+    ) * nalgebra::Matrix3::new(
+        1., 0., 0.,
+        0., angle_displace[0].to_radians().cos(), -(angle_displace[0].to_radians().sin()),
+        0., angle_displace[0].to_radians().sin(), angle_displace[0].to_radians().cos()
+    ) * nalgebra::Matrix3::new(
+        angle_displace[2].to_radians().cos(), -(angle_displace[2].to_radians().sin()), 0.,
+        angle_displace[2].to_radians().sin(), angle_displace[2].to_radians().cos(), 0.,
+        0., 0., 1.
     );
-    let rot_q2 = quaternion::mul(
-        quaternion::axis_angle([0., 1., 0.], dst[2].to_radians()),
-        quaternion::axis_angle([0., 0., 1.], dst[1].to_radians()),
+    let cam_rot = nalgebra::Matrix3::new(
+        cam_data.yaw.to_radians().cos(), 0., cam_data.yaw.to_radians().sin(),
+        0., 1., 0.,
+        -(cam_data.yaw.to_radians().sin()), 0., cam_data.yaw.to_radians().cos()
+    ) * nalgebra::Matrix3::new(
+        1., 0., 0.,
+        0., cam_data.pitch.to_radians().cos(), -(cam_data.pitch.to_radians().sin()),
+        0., cam_data.pitch.to_radians().sin(), cam_data.pitch.to_radians().cos()
+    ) * nalgebra::Matrix3::new(
+        cam_data.roll.to_radians().cos(), -(cam_data.roll.to_radians().sin()), 0.,
+        cam_data.roll.to_radians().sin(), cam_data.roll.to_radians().cos(), 0.,
+        0., 0., 1.
     );
-    let rot_q = quaternion::mul(rot_q1, rot_q2);
-    let pos = quaternion::rotate_vector(rot_q, [dist, 0., 0.]);
+    let or_pos = cam_rot * (disp_rot * nalgebra::Vector3::new(displace[0],displace[1],displace[2]));
+    let cam_pos = nalgebra::Vector3::new(cam_data.pos[0], cam_data.pos[1], cam_data.pos[2]);
+    let fullpos = or_pos+cam_pos;
     [
-        cam_data.pos[0] + pos[0],
-        cam_data.pos[1] + pos[1],
-        cam_data.pos[2] + pos[2],
+        fullpos.x,
+        fullpos.y,
+        fullpos.z
     ]
 }
 
-pub fn translate_point(point: [f32; 3], chunk_data: &map::GpuChunkData) -> Option<[f32; 3]> {
-    let mat_rol = ndarray::array![
-        [1., 0., 0., 0.,],
-        [0., chunk_data.rot[0].cos(), chunk_data.rot[0].sin(), 0.,],
-        [0., -chunk_data.rot[0].sin(), chunk_data.rot[0].cos(), 0.,],
-        [0., 0., 0., 1.,],
-    ];
-    let mat_pit = ndarray::array![
-        [chunk_data.rot[2].cos(), 0., -chunk_data.rot[2].sin(), 0.],
-        [0., 1., 0., 0.],
-        [chunk_data.rot[2].sin(), 0., chunk_data.rot[2].cos(), 0.],
-        [0., 0., 0., 1.]
-    ];
-    let mat_yaw = ndarray::array![
-        [chunk_data.rot[1].cos(), -chunk_data.rot[1].sin(), 0., 0.],
-        [chunk_data.rot[1].sin(), chunk_data.rot[1].cos(), 0., 0.,],
-        [0., 0., 1., 0.],
-        [0., 0., 0., 1.]
-    ];
-    let mat_rot = mat_yaw.dot(&mat_pit).dot(&mat_rol);
-    let mat_pos_0 = ndarray::array![
-        [1., 0., 0., chunk_data.orgin[0]],
-        [0., 1., 0., chunk_data.orgin[1]],
-        [0., 0., 1., chunk_data.orgin[2]],
-        [0., 0., 0., 1.]
-    ];
-    let mat_pos_1 = ndarray::array![
-        [1., 0., 0., -chunk_data.pos[0]],
-        [0., 1., 0., -chunk_data.pos[1]],
-        [0., 0., 1., -chunk_data.pos[2]],
-        [0., 0., 0., 1.]
-    ];
-    let mat_rot = mat_pos_0.dot(&mat_rot);
-    let mat_trans = mat_rot.dot(&mat_pos_1);
-    let npos = ndarray::array![point[0], point[1], point[2], 1.];
-    // let npos = npos.dot(&mat_trans);
-    let npos = mat_trans.dot(&npos);
-    Some([
-        npos.get(0).cloned().unwrap(),
-        npos.get(1).cloned().unwrap(),
-        npos.get(2).cloned().unwrap(),
-    ])
+
+pub fn translate_point(point: [f32; 3], chunk_data: &map::gpu_data::GpuChunkData) -> Option<[f32; 3]> {
+    let rot = nalgebra::Matrix3::new(
+        chunk_data.rot[1].to_radians().cos(), 0., chunk_data.rot[1].to_radians().sin(),
+        0., 1., 0.,
+        -(chunk_data.rot[1].to_radians().sin()), 0., chunk_data.rot[1].to_radians().cos()
+    ) * nalgebra::Matrix3::new(
+        1., 0., 0.,
+        0., chunk_data.rot[0].to_radians().cos(), -(chunk_data.rot[0].to_radians().sin()),
+        0., chunk_data.rot[0].to_radians().sin(), chunk_data.rot[0].to_radians().cos()
+    ) * nalgebra::Matrix3::new(
+        chunk_data.rot[2].to_radians().cos(), -(chunk_data.rot[2].to_radians().sin()), 0.,
+        chunk_data.rot[2].to_radians().sin(), chunk_data.rot[2].to_radians().cos(), 0.,
+        0., 0., 1.
+    );
+    let orgin_point = [point[0] + chunk_data.orgin[0], point[1] + chunk_data.orgin[1], point[2] + chunk_data.orgin[2]];
+    let rotated_point = rot * nalgebra::Vector3::new(orgin_point[0],orgin_point[1],orgin_point[2]);
+    let moved_point = [rotated_point.x + chunk_data.pos[0], rotated_point.y + chunk_data.pos[1], rotated_point.z + chunk_data.pos[2]];
+    Some(moved_point)
 }
 
 pub struct State<'a> {
@@ -188,7 +186,7 @@ impl State<'_> {
         self.chunks_data.push(chunk);
     }
     pub async fn new(window: Arc<Window>) -> Self {
-        let def_vir_rez = 250;
+        let def_vir_rez = VIR_RES_X;
         let size = (window.inner_size().width, window.inner_size().height);
         let vir_size = (
             def_vir_rez,
@@ -381,7 +379,6 @@ impl State<'_> {
                 self.add_model(map_data);
             }
         }
-
         for i in 0..5 {
             if let Ok(mut map_data) = super::load_model_full(
                 &self.device,

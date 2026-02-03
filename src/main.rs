@@ -10,6 +10,7 @@ mod mainstate;
 mod map;
 mod screen;
 mod voxelize;
+mod vects;
 
 pub fn load_model_full(
     device: &wgpu::Device,
@@ -19,7 +20,8 @@ pub fn load_model_full(
     let d_d = default_deph.unwrap_or(0);
     let d_size = 2_f32.powi(d_d);
     let mut dims = [0_f32; 3];
-    let mut orgin = [0_f32; 3];
+    // let mut orgin = [0_f32; 3];
+    let mut orgin = wide::f32x4::splat(0.0);
     let mut n = 0;
     let vox_data = dot_vox::load(path)?;
     for model in vox_data.models.iter() {
@@ -27,18 +29,14 @@ pub fn load_model_full(
             dims[0] = dims[0].max(voxel.x as f32 * d_size);
             dims[1] = dims[1].max(voxel.z as f32 * d_size);
             dims[2] = dims[2].max(voxel.y as f32 * d_size);
-            orgin[0] += voxel.x as f32 * d_size;
-            orgin[1] += voxel.z as f32 * d_size;
-            orgin[2] += voxel.y as f32 * d_size;
+            orgin += wide::f32x4::from([voxel.x as f32 * d_size,voxel.y as f32 * d_size,voxel.z as f32 * d_size,0.]);
             n += 1;
         }
     }
-    orgin[0] /= n as f32;
-    orgin[1] /= n as f32;
-    orgin[2] /= n as f32;
+    orgin /= wide::f32x4::splat(n as f32);
     let dim = f32::log2(dims[0].max(dims[1]).max(dims[2])).ceil() as i32;
     let mut map = map::ChunkData::new(dim);
-    map.gpu_chunk_data.orgin = orgin;
+    map.gpu_chunk_data.orgin = [orgin.as_array()[0],orgin.as_array()[1],orgin.as_array()[2]];
     let _ = _load_model(&mut map, path, d_d);
     // map.optimize();
     map.serialize();
