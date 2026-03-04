@@ -6,66 +6,203 @@ use super::map;
 use super::screen;
 
 use rand::random_range;
-use voxelizer::Vector3;
 use wgpu::{ShaderModuleDescriptor, ShaderSource};
 use winit::window::Window;
 
-const VIR_RES_X : u32 = 125;
-pub fn camera_angle_disp(cam_data: &cam::GpuCamData, angle_displace: [f32; 3], displace: [f32; 3]) -> [f32; 3] {
+const VIR_RES_X: u32 = 200;
+pub fn angle_disp(
+    cam_data: &cam::GpuCamData,
+    angle_displace: [f32; 3],
+    displace: [f32; 3],
+) -> nalgebra::Vector3<f32> {
     let disp_rot = nalgebra::Matrix3::new(
-        angle_displace[1].to_radians().cos(), 0., angle_displace[1].to_radians().sin(),
-        0., 1., 0.,
-        -(angle_displace[1].to_radians().sin()), 0., angle_displace[1].to_radians().cos()
+        angle_displace[1].to_radians().cos(),
+        0.,
+        angle_displace[1].to_radians().sin(),
+        0.,
+        1.,
+        0.,
+        -(angle_displace[1].to_radians().sin()),
+        0.,
+        angle_displace[1].to_radians().cos(),
     ) * nalgebra::Matrix3::new(
-        1., 0., 0.,
-        0., angle_displace[0].to_radians().cos(), -(angle_displace[0].to_radians().sin()),
-        0., angle_displace[0].to_radians().sin(), angle_displace[0].to_radians().cos()
+        1.,
+        0.,
+        0.,
+        0.,
+        angle_displace[0].to_radians().cos(),
+        -(angle_displace[0].to_radians().sin()),
+        0.,
+        angle_displace[0].to_radians().sin(),
+        angle_displace[0].to_radians().cos(),
     ) * nalgebra::Matrix3::new(
-        angle_displace[2].to_radians().cos(), -(angle_displace[2].to_radians().sin()), 0.,
-        angle_displace[2].to_radians().sin(), angle_displace[2].to_radians().cos(), 0.,
-        0., 0., 1.
+        angle_displace[2].to_radians().cos(),
+        -(angle_displace[2].to_radians().sin()),
+        0.,
+        angle_displace[2].to_radians().sin(),
+        angle_displace[2].to_radians().cos(),
+        0.,
+        0.,
+        0.,
+        1.,
     );
     let cam_rot = nalgebra::Matrix3::new(
-        cam_data.yaw.to_radians().cos(), 0., cam_data.yaw.to_radians().sin(),
-        0., 1., 0.,
-        -(cam_data.yaw.to_radians().sin()), 0., cam_data.yaw.to_radians().cos()
+        cam_data.yaw.to_radians().cos(),
+        0.,
+        cam_data.yaw.to_radians().sin(),
+        0.,
+        1.,
+        0.,
+        -(cam_data.yaw.to_radians().sin()),
+        0.,
+        cam_data.yaw.to_radians().cos(),
     ) * nalgebra::Matrix3::new(
-        1., 0., 0.,
-        0., cam_data.pitch.to_radians().cos(), -(cam_data.pitch.to_radians().sin()),
-        0., cam_data.pitch.to_radians().sin(), cam_data.pitch.to_radians().cos()
+        1.,
+        0.,
+        0.,
+        0.,
+        cam_data.pitch.to_radians().cos(),
+        -(cam_data.pitch.to_radians().sin()),
+        0.,
+        cam_data.pitch.to_radians().sin(),
+        cam_data.pitch.to_radians().cos(),
     ) * nalgebra::Matrix3::new(
-        cam_data.roll.to_radians().cos(), -(cam_data.roll.to_radians().sin()), 0.,
-        cam_data.roll.to_radians().sin(), cam_data.roll.to_radians().cos(), 0.,
-        0., 0., 1.
+        cam_data.roll.to_radians().cos(),
+        -(cam_data.roll.to_radians().sin()),
+        0.,
+        cam_data.roll.to_radians().sin(),
+        cam_data.roll.to_radians().cos(),
+        0.,
+        0.,
+        0.,
+        1.,
     );
-    let or_pos = cam_rot * (disp_rot * nalgebra::Vector3::new(displace[0],displace[1],displace[2]));
+    let or_pos =
+        cam_rot * (disp_rot * nalgebra::Vector3::new(displace[0], displace[1], displace[2]));
+    or_pos
+    // [or_pos.x, or_pos.y, or_pos.z]
+}
+pub fn camera_angle_disp(
+    cam_data: &cam::GpuCamData,
+    angle_displace: [f32; 3],
+    displace: [f32; 3],
+) -> [f32; 3] {
+    let disp_rot = nalgebra::Matrix3::new(
+        angle_displace[1].to_radians().cos(),
+        0.,
+        angle_displace[1].to_radians().sin(),
+        0.,
+        1.,
+        0.,
+        -(angle_displace[1].to_radians().sin()),
+        0.,
+        angle_displace[1].to_radians().cos(),
+    ) * nalgebra::Matrix3::new(
+        1.,
+        0.,
+        0.,
+        0.,
+        angle_displace[0].to_radians().cos(),
+        -(angle_displace[0].to_radians().sin()),
+        0.,
+        angle_displace[0].to_radians().sin(),
+        angle_displace[0].to_radians().cos(),
+    ) * nalgebra::Matrix3::new(
+        angle_displace[2].to_radians().cos(),
+        -(angle_displace[2].to_radians().sin()),
+        0.,
+        angle_displace[2].to_radians().sin(),
+        angle_displace[2].to_radians().cos(),
+        0.,
+        0.,
+        0.,
+        1.,
+    );
+    let cam_rot = nalgebra::Matrix3::new(
+        cam_data.yaw.to_radians().cos(),
+        0.,
+        cam_data.yaw.to_radians().sin(),
+        0.,
+        1.,
+        0.,
+        -(cam_data.yaw.to_radians().sin()),
+        0.,
+        cam_data.yaw.to_radians().cos(),
+    ) * nalgebra::Matrix3::new(
+        1.,
+        0.,
+        0.,
+        0.,
+        cam_data.pitch.to_radians().cos(),
+        -(cam_data.pitch.to_radians().sin()),
+        0.,
+        cam_data.pitch.to_radians().sin(),
+        cam_data.pitch.to_radians().cos(),
+    ) * nalgebra::Matrix3::new(
+        cam_data.roll.to_radians().cos(),
+        -(cam_data.roll.to_radians().sin()),
+        0.,
+        cam_data.roll.to_radians().sin(),
+        cam_data.roll.to_radians().cos(),
+        0.,
+        0.,
+        0.,
+        1.,
+    );
+    let or_pos =
+        cam_rot * (disp_rot * nalgebra::Vector3::new(displace[0], displace[1], displace[2]));
     let cam_pos = nalgebra::Vector3::new(cam_data.pos[0], cam_data.pos[1], cam_data.pos[2]);
-    let fullpos = or_pos+cam_pos;
-    [
-        fullpos.x,
-        fullpos.y,
-        fullpos.z
-    ]
+    let fullpos = or_pos + cam_pos;
+    [fullpos.x, fullpos.y, fullpos.z]
 }
 
-
-pub fn translate_point(point: [f32; 3], chunk_data: &map::gpu_data::GpuChunkData) -> Option<[f32; 3]> {
+pub fn translate_point(
+    point: [f32; 3],
+    chunk_data: &map::gpu_data::GpuChunkData,
+) -> Option<[f32; 3]> {
     let rot = nalgebra::Matrix3::new(
-        chunk_data.rot[1].to_radians().cos(), 0., chunk_data.rot[1].to_radians().sin(),
-        0., 1., 0.,
-        -(chunk_data.rot[1].to_radians().sin()), 0., chunk_data.rot[1].to_radians().cos()
+        chunk_data.rot[1].to_radians().cos(),
+        0.,
+        chunk_data.rot[1].to_radians().sin(),
+        0.,
+        1.,
+        0.,
+        -(chunk_data.rot[1].to_radians().sin()),
+        0.,
+        chunk_data.rot[1].to_radians().cos(),
     ) * nalgebra::Matrix3::new(
-        1., 0., 0.,
-        0., chunk_data.rot[0].to_radians().cos(), -(chunk_data.rot[0].to_radians().sin()),
-        0., chunk_data.rot[0].to_radians().sin(), chunk_data.rot[0].to_radians().cos()
+        1.,
+        0.,
+        0.,
+        0.,
+        chunk_data.rot[0].to_radians().cos(),
+        -(chunk_data.rot[0].to_radians().sin()),
+        0.,
+        chunk_data.rot[0].to_radians().sin(),
+        chunk_data.rot[0].to_radians().cos(),
     ) * nalgebra::Matrix3::new(
-        chunk_data.rot[2].to_radians().cos(), -(chunk_data.rot[2].to_radians().sin()), 0.,
-        chunk_data.rot[2].to_radians().sin(), chunk_data.rot[2].to_radians().cos(), 0.,
-        0., 0., 1.
+        chunk_data.rot[2].to_radians().cos(),
+        -(chunk_data.rot[2].to_radians().sin()),
+        0.,
+        chunk_data.rot[2].to_radians().sin(),
+        chunk_data.rot[2].to_radians().cos(),
+        0.,
+        0.,
+        0.,
+        1.,
     );
-    let orgin_point = [point[0] + chunk_data.orgin[0], point[1] + chunk_data.orgin[1], point[2] + chunk_data.orgin[2]];
-    let rotated_point = rot * nalgebra::Vector3::new(orgin_point[0],orgin_point[1],orgin_point[2]);
-    let moved_point = [rotated_point.x + chunk_data.pos[0], rotated_point.y + chunk_data.pos[1], rotated_point.z + chunk_data.pos[2]];
+    let orgin_point = [
+        point[0] + chunk_data.orgin[0],
+        point[1] + chunk_data.orgin[1],
+        point[2] + chunk_data.orgin[2],
+    ];
+    let rotated_point =
+        rot * nalgebra::Vector3::new(orgin_point[0], orgin_point[1], orgin_point[2]);
+    let moved_point = [
+        rotated_point.x + chunk_data.pos[0],
+        rotated_point.y + chunk_data.pos[1],
+        rotated_point.z + chunk_data.pos[2],
+    ];
     Some(moved_point)
 }
 
@@ -206,7 +343,8 @@ impl State<'_> {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     required_features: wgpu::Features::default()
-                        | wgpu::Features::VERTEX_WRITABLE_STORAGE,
+                        | wgpu::Features::VERTEX_WRITABLE_STORAGE
+                        | wgpu::Features::SPIRV_SHADER_PASSTHROUGH,
                     required_limits: wgpu::Limits::default(),
                     memory_hints: wgpu::MemoryHints::Performance,
                     ..Default::default()
@@ -244,6 +382,12 @@ impl State<'_> {
             label: Some("Main rayshader"),
             source: ShaderSource::Wgsl(include_str!("shaders/main.wgsl").into()),
         });
+        // let render_shader = unsafe {
+        //     device.create_shader_module_spirv(&ShaderModuleDescriptorSpirV {
+        //         label: Some("Main rayshader"),
+        //         source: make_spirv_raw(include_bytes!("shaders/render.spv")),
+        //     })
+        // };
         let render_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("Main rayshader"),
             source: ShaderSource::Wgsl(include_str!("shaders/render.wgsl").into()),

@@ -2,19 +2,19 @@ use std::f32;
 use std::sync::Arc;
 use std::time::Instant;
 
-
 use super::input;
 use super::mainstate;
 use super::mainstate::State;
 use winit::application::ApplicationHandler;
-use winit::dpi::{PhysicalPosition};
+use winit::dpi::PhysicalPosition;
 use winit::event::WindowEvent;
-use winit::event_loop::{ActiveEventLoop};
+use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::KeyCode;
 use winit::window::{Window, WindowId};
 
 #[derive(Default)]
 pub struct GameState {
+    pub velocity: nalgebra::Vector3<f32>,
 }
 impl GameState {
     pub fn player_input<'a>(
@@ -23,6 +23,15 @@ impl GameState {
         state: &mut State<'a>,
         delta_time: f32,
     ) {
+        state.cam_data.pos[0] += self.velocity[0];
+        state.cam_data.pos[1] += self.velocity[1];
+        state.cam_data.pos[2] += self.velocity[2];
+        self.velocity *= 0.8;
+        if (self.velocity[0].powi(2) + self.velocity[1].powi(2) + self.velocity[2].powi(2)).sqrt()
+            < 0.05
+        {
+            self.velocity = nalgebra::Vector3::new(0., 0., 0.);
+        }
         if input.is_key_pressed(KeyCode::KeyP) {
             let npos = mainstate::camera_angle_disp(&state.cam_data, [0.; 3], [0., 0., 16.]);
 
@@ -51,23 +60,38 @@ impl GameState {
         let speed = 5. * delta_time;
         let cam_speed = 9. * delta_time;
 
-        if input.is_key_pressed(KeyCode::ShiftLeft) {
-            state.cam_data.pos[1] -= speed;
-        }
-        if input.is_key_pressed(KeyCode::Space) {
-            state.cam_data.pos[1] += speed;
-        }
-        if input.is_key_pressed(KeyCode::KeyW) {
-            state.cam_data.pos = mainstate::camera_angle_disp(&state.cam_data, [0., 0., 0.], [0., 0., speed]);
-        }
-        if input.is_key_pressed(KeyCode::KeyS) {
-            state.cam_data.pos = mainstate::camera_angle_disp(&state.cam_data, [0., 0., 0.], [0., 0., -speed]);
-        }
-        if input.is_key_pressed(KeyCode::KeyA) {
-            state.cam_data.pos = mainstate::camera_angle_disp(&state.cam_data, [0., 0., 0.], [speed, 0., 0.]);
-        }
-        if input.is_key_pressed(KeyCode::KeyD) {
-            state.cam_data.pos = mainstate::camera_angle_disp(&state.cam_data, [0., 0., 0.], [-speed, 0., 0.]);
+        {
+            let mut vel_to_add = nalgebra::Vector3::new(0., 0., 0.);
+            if input.is_key_pressed(KeyCode::ShiftLeft) {
+                vel_to_add[1] -= 1.;
+                // self.velocity[1] -= speed;
+                // state.cam_data.pos[1] -= speed;
+            }
+            if input.is_key_pressed(KeyCode::Space) {
+                vel_to_add[1] += 1.;
+                // self.velocity[1] += speed;
+                // state.cam_data.pos[1] += speed;
+            }
+            if input.is_key_pressed(KeyCode::KeyW) {
+                vel_to_add += mainstate::angle_disp(&state.cam_data, [0., 0., 0.], [0., 0., 1.]);
+                // self.velocity += mainstate::angle_disp(&state.cam_data, [0.,0.,0.], [0.,0.,speed]);
+            }
+            if input.is_key_pressed(KeyCode::KeyS) {
+                vel_to_add += mainstate::angle_disp(&state.cam_data, [0., 0., 0.], [0., 0., -1.]);
+                // self.velocity += mainstate::angle_disp(&state.cam_data, [0.,0.,0.], [0.,0.,-speed]);
+            }
+            if input.is_key_pressed(KeyCode::KeyA) {
+                vel_to_add += mainstate::angle_disp(&state.cam_data, [0., 0., 0.], [1., 0., 0.]);
+                // self.velocity += mainstate::angle_disp(&state.cam_data, [0.,0.,0.], [speed,0.,0.]);
+            }
+            if input.is_key_pressed(KeyCode::KeyD) {
+                vel_to_add += mainstate::angle_disp(&state.cam_data, [0., 0., 0.], [-1., 0., 0.]);
+                // self.velocity += mainstate::angle_disp(&state.cam_data, [0.,0.,0.], [-speed,0.,0.]);
+            }
+            let d = vel_to_add[0].powi(2) + vel_to_add[1].powi(2) + vel_to_add[2].powi(2);
+            if d != 0. {
+                self.velocity += (vel_to_add / d.sqrt()) * speed;
+            }
         }
 
         if input.is_key_pressed(KeyCode::KeyH) {
@@ -201,11 +225,15 @@ impl ApplicationHandler for App<'_> {
                     state.chunks_data.get_mut(25).unwrap().gpu_chunk_data.rot[2] += 0.005;
 
                     state.chunks_data.last_mut().unwrap().gpu_chunk_data.rot = [
-                        -(state.cam_data.pitch+45.).to_radians(),
+                        -(state.cam_data.pitch + 45.).to_radians(),
                         state.cam_data.yaw.to_radians(),
                         -state.cam_data.roll.to_radians(),
                     ];
-                    let cact_pos = mainstate::camera_angle_disp(&state.cam_data, [10., -20., 0.], [0., 0., 8.]);
+                    let cact_pos = mainstate::camera_angle_disp(
+                        &state.cam_data,
+                        [10., -20., 0.],
+                        [0., 0., 8.],
+                    );
                     state.chunks_data.last_mut().unwrap().gpu_chunk_data.pos = cact_pos;
                     state.chunks_data.last_mut().unwrap().gpu_chunk_data.orgin = [0., 0., 0.];
 
